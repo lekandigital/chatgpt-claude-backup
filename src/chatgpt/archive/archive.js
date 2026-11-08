@@ -551,7 +551,8 @@ async function archiveConversation(summary, folder, prefetched = null) {
     record({ path: savedAs.slice(folder.length + 1), kind: 'canvas', ok: true, versions: doc.versions, failedUpdates: doc.failedUpdates });
   }
 
-  // Transcripts (the same renderer rebuilds them offline: scripts/rerender.mjs).
+  // Transcripts (the same renderer rebuilds them offline: scripts/chatgpt/rerender.mjs).
+  const title = conv.title || summary.title || 'Untitled';
   const rendered = ArchiveRender.documents(conv, { id: summary.id, title: summary.title, project: summary.project, is_archived: summary.is_archived }, names);
   for (const [path, kind] of [['transcript.md', 'transcript'], ['chatgpt-view.md', 'view'], ['branches.md', 'branches'], ['thinking.md', 'thinking']]) {
     if (rendered[path] == null) {
@@ -567,7 +568,7 @@ async function archiveConversation(summary, folder, prefetched = null) {
   const count = kind => new Set(files.filter(f => f.kind === kind && f.ok && f.path).map(f => f.path)).size;
   const stats = {
     messages: main.length + others.length,
-    thinking: thinking.length,
+    thinking: rendered.thinkingBlocks,
     uploads: count('upload'),
     outputs: count('output'),
     canvas: count('canvas'),

@@ -8,7 +8,7 @@
 // Finished chats are recorded per root folder, so a rerun only redoes chats
 // that are new or have changed since.
 
-const LOG_PREFIX = "[Claude Export Hub][archive]";
+const LOG_PREFIX = "[ChatGPT + Claude Backup][claude archive]";
 const STATE_KEY = "fullArchiveState";
 const DEFAULT_ROOT = "Claude Full Archive";
 const ROOT_MESSAGE_UUID = "00000000-0000-4000-8000-000000000000";
@@ -340,11 +340,18 @@ async function apiRequest(path, as, attempts = MAX_ATTEMPTS) {
       workerTabId = null;
     }
     if (last.ok) return last;
-    const retryable = last.status === 0 || last.status === 429 || last.status >= 500;
+    // Cloudflare's "Just a moment…" check: reload the claude.ai tab so it can clear, then retry.
+    const challenged = last.status === 403 && /Just a moment|challenge-platform|cf[-_]chl/i.test(`${last.text || ""} ${last.error || ""}`);
+    const retryable = challenged || last.status === 0 || last.status === 429 || last.status >= 500;
     if (!retryable || attempt === attempts) break;
     const retryAfter = Number(last.retryAfter);
-    const waitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(60000, 1000 * 2 ** attempt);
-    log(`  retry ${attempt}/${attempts - 1} in ${Math.round(waitMs / 1000)}s (HTTP ${last.status}) ${path}`);
+    const waitMs = challenged ? 20000 * attempt : retryAfter > 0 ? retryAfter * 1000 : Math.min(60000, 1000 * 2 ** attempt);
+    if (challenged) {
+      log(`  Cloudflare check on claude.ai — reloading the tab and waiting ${Math.round(waitMs / 1000)}s (if it persists, open the claude.ai tab and complete the check)`);
+      if (workerTabId !== null) await chrome.tabs.update(workerTabId, { url: "https://claude.ai/recents" }).catch(() => {});
+    } else {
+      log(`  retry ${attempt}/${attempts - 1} in ${Math.round(waitMs / 1000)}s (HTTP ${last.status}) ${path}`);
+    }
     await sleep(waitMs);
   }
   last.error = last.error || `HTTP ${last.status} ${(last.text || "").slice(0, 120)}`.trim();
@@ -1070,17 +1077,32 @@ async function archiveProjects(orgId, prefix, hintProjects = [], only = null) {
     for (const uuid of only) if (!projects.some((p) => p.uuid === uuid)) projects.push({ uuid, name: uuid });
   }
   for (const project of projects) {
-    const folder = `${prefix}_projects/${safeSegment(project.name, project.uuid)} [${project.uuid.slice(0, 8)}]`;
     const nameIn = makeNamer();
     try {
+      // Details first: projects missing from the list (e.g. starter projects) only get their name here.
       const detail = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}`).catch(() => project);
+      if (detail?.name && project.name === project.uuid) project.name = detail.name;
+      const folder = `${prefix}_projects/${safeSegment(project.name, project.uuid)} [${project.uuid.slice(0, 8)}]`;
       await saveJson(`${folder}/project.json`, detail);
       if (detail.prompt_template) await saveText(`${folder}/instructions.md`, detail.prompt_template, "text/markdown");
-      const docs = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/docs`).catch(() => []);
+      const listFailed = (what) => (error) => {
+        log(`  project ${what} unavailable: ${error.message.slice(0, 160)}`);
+        status.errors.push({ project: project.uuid, step: what, error: error.message.slice(0, 300) });
+        return [];
+      };
+      const docs = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/docs`).catch(listFailed("docs"));
       for (const doc of Array.isArray(docs) ? docs : []) {
         await saveText(nameIn(`${folder}/docs`, withExtension(doc.file_name || doc.uuid, "text/plain")), doc.content || "");
       }
-      const projectFiles = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/files`).catch(() => []);
+      // Project memory and synced knowledge sources (GitHub, Google Drive…), when there are any.
+      const memory = await apiJson(`/api/organizations/${orgId}/memory?project_uuid=${project.uuid}`, 2).catch(() => null);
+      if (memory && (memory.memory || memory.controls || memory.project_import)) {
+        await saveJson(`${folder}/memory.json`, memory);
+        if (typeof memory.memory === "string" && memory.memory.trim()) await saveText(`${folder}/memory.md`, memory.memory, "text/markdown");
+      }
+      const syncs = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/syncs`, 2).catch(() => []);
+      if (Array.isArray(syncs) ? syncs.length : syncs && Object.keys(syncs).length) await saveJson(`${folder}/syncs.json`, syncs);
+      const projectFiles = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/files`).catch(listFailed("files"));
       for (const file of Array.isArray(projectFiles) ? projectFiles : projectFiles.files || []) {
         const result = await downloadFirstWorking(fileCandidateUrls(file, orgId, null), (name) => nameIn(`${folder}/files`, name), file.file_name || null);
         if (!result.ok) log(`  project file failed: ${file.file_name} (${result.errors.join("; ")})`);
@@ -1253,7 +1275,13 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
       }
       if (unavailable.length) log(`${unavailable.length} chats not available any more (purged incognito/deleted) — see _index.md`);
       if (uuids) conversations = conversations.filter((c) => uuids.includes(c.uuid) || extra.includes(c.uuid));
-      if (project) conversations = conversations.filter((c) => projectUuidOf(c) === project);
+      if (project) {
+        // The project's own chat list catches chats the account lists missed.
+        const own = await apiJson(`/api/organizations/${orgId}/projects/${project}/conversations`, 2).catch(() => []);
+        const have = new Set(conversations.map((c) => c.uuid));
+        for (const c of Array.isArray(own) ? own : own.data || []) if (c?.uuid && !have.has(c.uuid)) conversations.push({ ...c, project_uuid: project });
+        conversations = conversations.filter((c) => projectUuidOf(c) === project);
+      }
       if (project) log(`${conversations.length} chats in project ${conversations.find((c) => c.project?.name)?.project.name || project}`);
       // Projects of the selected chats are saved too (instructions, docs, files).
       const projectSet = new Set(selecting ? conversations.map(projectUuidOf).filter(Boolean) : []);
@@ -1322,6 +1350,12 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
       if (includeProjects && !selecting && !stopRequested) {
         await writeStatus({ phase: "projects" });
         await archiveProjects(orgId, prefix, hints?.projects || []);
+        // Account memory (what Claude remembers across chats).
+        const memory = await apiJson(`/api/organizations/${orgId}/memory`, 2).catch(() => null);
+        if (memory) {
+          await saveJson(`${prefix}_account/memory.json`, memory);
+          if (typeof memory.memory === "string" && memory.memory.trim()) await saveText(`${prefix}_account/memory.md`, memory.memory, "text/markdown");
+        }
       } else if (includeProjects && projectSet.size && !stopRequested) {
         await writeStatus({ phase: "projects" });
         await archiveProjects(orgId, prefix, [], projectSet);

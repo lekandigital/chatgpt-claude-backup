@@ -229,7 +229,7 @@ const Transcript = (() => {
       when(data.create_time) ? `- Created: ${when(data.create_time)}` : '',
       when(data.update_time) ? `- Updated: ${when(data.update_time)}` : '',
       typeof model === 'string' && model ? `- Model: ${model}` : '',
-      `- Exported: ${when(exportedAt / 1000)} with ChatGPT Attachment Downloader ${Config.VERSION}`,
+      `- Exported: ${when(exportedAt / 1000)} with ChatGPT + Claude Backup ${Config.VERSION}`,
     ].filter(Boolean);
     const sections = turns.map(turn => `### ${turn.who}${turn.at ? ` · ${turn.at}` : ''}\n\n${turn.text}`);
     return { title, messages: turns.length, markdown: `# ${title}\n\n${details.join('\n')}\n\n---\n\n${sections.join('\n\n---\n\n')}\n` };
