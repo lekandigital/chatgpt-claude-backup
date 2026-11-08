@@ -14,7 +14,7 @@ extension's code, that:
     verified against ChatGPT's own size, matches the attachment's recorded size; files saved
     in another chat folder count as saved
 
-    python3 -I scripts/verify-archive.py "<ChatGPT Full Archive>" [--samples]
+    python3 -I scripts/chatgpt/verify-archive.py "<ChatGPT Full Archive>" [--samples]
 """
 import collections
 import glob

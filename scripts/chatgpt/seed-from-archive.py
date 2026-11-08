@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Write extension/archive-state.json from an existing Full archive folder.
+"""Write chatgpt/archive-state.json from an existing Full archive folder.
 
 Use it to continue a run on another computer: copy the archive folder there, run this
 against it, reload the extension, and start the archive with the same folder name.
 Chats whose manifest records a failure the current archiver can fix are left out, so
 they are archived again.
 
-    python3 -I scripts/seed-from-archive.py "<Downloads/ChatGPT Full Archive>" [--since 2026-11-05T15:36:00Z]
+    python3 -I scripts/chatgpt/seed-from-archive.py "<Downloads/ChatGPT Full Archive>" [--since 2026-11-05T15:36:00Z]
 
 --since keeps only chats archived at or after that time (when an older archiver
 revision wrote the earlier ones).
@@ -21,7 +21,7 @@ RETRY_ERRORS = ("HTML_RESPONSE", "Invalid filename", "HTTP_OTHER", "MAGIC_MISMAT
 
 archive = sys.argv[1]
 since = sys.argv[sys.argv.index("--since") + 1] if "--since" in sys.argv else ""
-out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extension", "archive-state.json")
+out = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "chatgpt", "archive-state.json")
 listed = {c["id"]: c for c in json.load(open(os.path.join(archive, "_conversations.json")))}
 
 done, skipped = {}, 0

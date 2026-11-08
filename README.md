@@ -1,211 +1,182 @@
-# Claude Export Hub
+# ChatGPT + Claude Backup
 
-Chrome extension for exporting Claude.ai conversations — transcripts, artifacts, pasted content, attachment excerpts, and visible thinking/status panels (toggleable per export) — as organized ZIP archives. All processing runs locally in your browser.
+A Chrome extension that backs up your **ChatGPT** and **Claude** chats: one chat, a project, the chats you pick, or all of them. It saves everything it can reach, not just the text: thinking, pasted text, your uploads, the files the assistant made, canvases and artifacts, project instructions and knowledge files, and every edited or regenerated branch.
 
-## ⚠ Maintenance notice
+Everything runs in your own browser with your existing sign-in. Files go straight into your Downloads folder, one folder per chat. Nothing is sent anywhere else.
 
-Claude Export Hub depends on the structure of Claude's web interface and API responses, both of which Anthropic changes frequently and without notice. **The extension requires ongoing updates to maintain full functionality.** If exports start returning empty results or missing content categories, check for an updated version of the extension. DOM selectors for status panels, API response shapes, and conversation payload structures are all subject to change.
+> This repository used to be **claude-export-hub**. The ChatGPT half comes from [chatgpt-attachment-downloader](https://github.com/lekandigital/chatgpt-attachment-downloader). Old links redirect here.
 
-## What it does
+## Install
 
-Claude Export Hub fetches conversation data from Claude's own API using your existing browser session, then packages selected content into downloadable ZIP files. No third-party servers are involved.
+1. Clone or download this repository and keep the folder somewhere permanent.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and select the repository folder (the one with `manifest.json`).
+3. Reload any claude.ai or chatgpt.com tabs that were already open.
 
-## Export modes
+No build step is needed: the built ChatGPT files in `chatgpt/` are committed. Chrome 111 or newer.
 
-- **This chat** — export the conversation you are viewing
-- **Pick chats** — search and select specific conversations from your history
-- **All chats** — export your full conversation list (with confirmation)
+## Use
 
-Use the extension popup for all three modes. A floating in-page control on chat pages exports the current conversation quickly.
+Click the toolbar icon. The popup opens on the **Claude** or **ChatGPT** tab, depending on the site you are on.
 
-## Full archive (complete backup)
+| Button | What it does |
+|---|---|
+| **Back up this chat** | The chat open in the current tab, always a fresh copy. If the chat is in a project, the project is saved too. Progress shows in the popup. |
+| **Back up this project** | Shown on a project page, or on a ChatGPT chat inside a project: every chat in the project, plus the project's settings, instructions, knowledge files (and, on Claude, project memory and synced sources). |
+| **Choose chats…** | Opens the backup page with your chat list: filter by title or project, tick chats (or **Choose all shown**), then **Archive listed chats**. |
+| **Back up all chats** | Asks once to confirm, then backs up the whole account, followed by projects and account-level data. |
 
-**All chats → "Full archive"** in the popup opens `archive.html`, which writes every chat straight into `Downloads/Claude Full Archive/` — no ZIP, no save dialogs:
+- **Folder inside Downloads** defaults to `Claude Full Archive` / `ChatGPT Full Archive`. The extension remembers which chats each folder already has, so running again only saves new or changed chats. Tick **Redo chats already saved in this folder** to refresh them anyway.
+- **Last backup** shows the latest run (live while it runs). **Show** jumps to its tab.
+- Keep the backup tab open until it says *Done*. Closing the popup is fine.
+- **Backup page** opens the full page with all options. The other link opens the older tools (see [Older tools](#older-tools)).
+
+### How long it takes
+
+- **Claude:** about a chat every few seconds, plus file downloads.
+- **ChatGPT** limits chat reads to roughly one a minute after the first ~200 in a burst. A large account therefore takes many hours, and **your own ChatGPT use may be rate-limited while it runs**. When ChatGPT answers "too many requests", the run pauses (2 minutes, doubling to 15) and retries, so nothing is lost. One chat, or a handful, is quick. Run full ChatGPT backups overnight.
+
+## What gets saved
+
+### Claude
 
 ```
 Claude Full Archive/
-  _index.md / _index.json       # every chat with per-category counts
-  _conversations.json           # the chat list as the API returned it
-  _status.json                  # live progress + recent log (rewritten every ~15 s)
-  _projects/<name>/             # project.json, instructions.md, docs/, files/
+  _index.md / _index.json       every chat with counts per category (full runs)
+  _conversations.json           the chat list as Claude returned it
+  _status.json                  live progress and recent log (rewritten every ~15 s)
+  _projects/<name>/             project.json, instructions.md, docs/, files/, memory.json, syncs.json
+  _account/memory.json          what Claude remembers across chats (full runs)
+  _account-files/               account files no chat folder already has
   2026-05-21 Chat title [a1b2c3d4]/
-    conversation.json           # raw API payload, every branch, thinking, tool calls
-    transcript.md               # main branch, thinking + pasted text inline
-    branches.md                 # edited/retried branches (when any)
-    thinking.md                 # every thinking block
-    pasted/                     # pasted text and text attachments
-    uploads/                    # your files, original bytes (/files/{id}/contents or sandbox)
-    outputs/                    # files Claude made (wiggle sandbox; text rebuilt from the chat if expired)
-    tool-images/                # images returned inside tool results
-    created-files/              # other create_file targets, rebuilt from the chat
-    artifacts/                  # final version of each artifact
-    manifest.json               # every file, how it was fetched, and anything that failed
+    conversation.json           raw API payload: every branch, thinking, tool calls
+    transcript.md               main branch with thinking and pasted text inline
+    branches.md                 edited and retried branches, when any
+    thinking.md                 every thinking block
+    pasted/                     pasted text and text attachments
+    uploads/                    your files, original bytes
+    outputs/                    files Claude made (sandbox outputs; text rebuilt from the chat if expired)
+    tool-images/                images returned inside tool results
+    created-files/              other files Claude created, rebuilt from the chat
+    file-versions/              earlier versions of rewritten files
+    artifacts/                  final version of each artifact
+    manifest.json               every file, how it was fetched, and anything that failed
 ```
 
-How it works: API calls run inside a background claude.ai tab (same session as the site), files are written with `chrome.downloads`, and finished chats are remembered per folder so a rerun only redoes new or changed chats. Image previews (`.preview.webp`) are used only when an original is unavailable.
+Incognito (temporary) chats never appear in Claude's lists. Recent ones can still be fetched by ID: paste their links into **Only these chats** on the backup page. Claude purges older ones.
 
-Incognito (temporary) chats never appear in Claude's chat lists. Recent ones can still be fetched by ID: add their links to the "Only these chats" box, or pass them as `extra`. Older ones are purged by Claude and return 404.
+### ChatGPT
 
-After the chats, two more passes run: every file in the account's file list (`/account/files`) that no chat folder already has is saved into that chat's `file-versions/` (earlier versions of rewritten files, files from deleted branches) or `_account-files/`.
+```
+ChatGPT Full Archive/
+  _index.md / _index.json        every chat with counts (full runs)
+  _conversations.json            the chat list as ChatGPT returned it
+  _status.json                   live progress and recent log
+  _account/                      memories, custom instructions, settings, shared links (full runs)
+  _image-library/                generated images not already saved with a chat (full runs)
+  _projects/<name>/              project settings, instructions and knowledge files
+  2026-11-05 Chat title [6aec4e53]/
+    conversation.json            raw API payload: every branch, hidden and tool messages
+    transcript.md                main thread with thinking, tool calls and outputs
+    chatgpt-view.md              what ChatGPT shows
+    branches.md                  edited and regenerated branches, when any
+    thinking.md                  every reasoning summary
+    uploads/                     your files (including voice dictation), checked against ChatGPT's recorded size
+    outputs/                     generated images, charts, Code Interpreter files
+    files/                       files listed for the chat but not linked from a message
+    canvas/                      final canvas documents
+    manifest.json                every file, how it was fetched, and anything that failed
+```
 
-### Using Claude's official data export as a map
+Expected failures, recorded in `manifest.json`: Code Interpreter sandbox files expire after about 7 days, old voice-mode audio and some old uploads are gone from ChatGPT's servers, and `.js` sandbox files can't be downloaded.
 
-The official export (Settings → Privacy → Export data) lists every chat and file but only names the files. Use it to tell the archiver where to look, then fold it in:
+## How it works
+
+- The backup page is an extension tab, so a long run doesn't depend on the service worker staying awake.
+- Requests run inside a background claude.ai or chatgpt.com tab, with the same session as the site. ChatGPT's bearer token is read from its own session endpoint and never leaves that tab.
+- Files are written with `chrome.downloads` straight into `Downloads/<folder>/`, with no ZIP and no save dialogs.
+- Finished chats are remembered per folder in `chrome.storage`, so an interrupted run resumes where it stopped.
+- Timers run in a worker, so a hidden tab isn't throttled to one tick a minute.
+- If claude.ai shows a Cloudflare "Just a moment…" check, the run reloads its tab and waits. If the check needs a click, open the background claude.ai tab and complete it.
+
+## Using the official data export as a map
+
+Each site's official export (Settings → Data controls / Privacy → Export) lists every chat and file, but the live API holds richer data. Use both:
+
+**Claude**
 
 ```bash
-python3 -I scripts/hints-from-official-export.py "<unzipped export dir>"   # writes archive-hints.json (git-ignored)
-# run the Full archive — it loads archive-hints.json automatically and also tries
-# every hinted chat, file ID (/files/{id}/contents, then preview) and project by ID
-python3 -I scripts/merge-official-export.py "$HOME/Downloads/Claude Full Archive" "<unzipped export dir>"
+python3 -I scripts/claude/hints-from-official-export.py "<unzipped export>"   # writes claude/archive-hints.json (git-ignored)
+# Reload the extension, run Back up all chats: it also tries every chat, file and project the export knows
+python3 -I scripts/claude/merge-official-export.py "$HOME/Downloads/Claude Full Archive" "<unzipped export>"
 ```
 
-The merge step adds `_official-export-only/` (chats Claude no longer serves, rebuilt from the export), `_official-export/` (projects, memories, design chats, published artifacts, Claude Code cloud) and `_coverage.md`, which accounts for every chat, file, thinking block and pasted text in the export. `_hint-files.json` and `_account-files.json` record each file ID's outcome; runs limited to selected chats write `.selected.json` versions instead.
+The merge adds `_official-export-only/` (chats Claude no longer serves), `_official-export/` (memories, design chats, published artifacts, Claude Code cloud) and `_coverage.md`.
 
-### Driving it from a script
+**ChatGPT**
 
-Create `automation-token.txt` (git-ignored, 16+ random characters) in the extension folder and reload the extension. Then opening these URLs in Chrome runs commands (the token stops web pages from triggering anything):
+```bash
+python3 -I scripts/chatgpt/merge-official-export.py "$HOME/Downloads/ChatGPT Full Archive" <export.zip>   # _library, _codex, recovered files, _coverage.md
+python3 -I scripts/chatgpt/verify-archive.py "$HOME/Downloads/ChatGPT Full Archive"                      # independent completeness check
+node scripts/chatgpt/rerender.mjs "$HOME/Downloads/ChatGPT Full Archive" [--write]                        # rebuild transcripts offline after a renderer fix
+python3 -I scripts/chatgpt/seed-from-archive.py "<archive folder>"   # carry finished-chat state to another computer (chatgpt/archive-state.json)
+```
+
+## Driving it from a script
+
+Put a random `automation-token.txt` (16+ characters, git-ignored) in the extension folder and reload the extension. Opening these links in Chrome then runs commands. The token stops web pages from triggering anything.
 
 ```bash
 T=$(cat automation-token.txt)
-open -g "https://claude.ai/#ceh=$T&cmd=reload"                                   # reload the extension
-open -g "https://claude.ai/#ceh=$T&cmd=archive"                                  # archive everything
-open -g "https://claude.ai/#ceh=$T&cmd=archive&uuids=<id>,<id>&root=Test&force=1" # selected chats
-open -g "https://claude.ai/#ceh=$T&cmd=archive&extra=<incognito id>,…"           # plus unlisted chats
+open -g "https://claude.ai/#ccb=$T&cmd=reload"                                        # reload the extension
+open -g "https://claude.ai/#ccb=$T&cmd=archive"                                       # all Claude chats
+open -g "https://claude.ai/#ccb=$T&cmd=archive&uuids=<id>,<id>&root=Test&force=1"     # chosen Claude chats
+open -g "https://claude.ai/#ccb=$T&cmd=archive&project=<project uuid>"                # one Claude project
+open -g "https://chatgpt.com/#ccb=$T&cmd=archive&ids=<id>,<id>&root=Test&force=1"     # chosen ChatGPT chats
+open -g "https://chatgpt.com/#ccb=$T&cmd=archive&project=g-p-<id>"                    # one ChatGPT project
 ```
 
-Watch `Downloads/<root>/_status.json` for progress.
+The archiver is picked from the site the link opens on (or `site=claude|chatgpt`). More options: `extra=` (unlisted Claude chats), `redo=` (re-archive chosen ChatGPT chats), `probe=path|path` (save raw API responses to `_probe/`), and `account=1` (ChatGPT account data only). The older `#ceh=` and `#cga=` prefixes still work. Watch `Downloads/<root>/_status.json` for progress.
 
-## Include options
+## Older tools
 
-Each export uses checkboxes:
+Both earlier extensions' quick tools are still in the popup's footer link:
 
-- **Transcript** — full conversation as `chat.md` (on by default)
-- **Artifacts** — Claude files and exportable payloads in `artifacts/`, plus related folders (on by default)
-- **Pasted** — long pasted human messages in `pasted/` (on by default)
-- **Visible thinking** — status/thinking panels Claude shows in the chat UI, in `thinking/` (on by default)
-
-Export is blocked if no content type is selected.
-
-### Visible thinking export
-
-Claude Export Hub exports **only the thinking and status panels Claude visibly shows in the chat UI**, when available. This includes expandable sections such as:
-
-- Extended thinking summaries (for example, “Synthesizing…”)
-- Tool/status panels (for example, “Viewed files”, “Edited files”, “Presented files”)
-- Progress labels (for example, “Retrieving complete source code”, “Diagnosing code block clipping issue”)
-
-This does **not** recover hidden, omitted, encrypted, or redacted reasoning. If Claude or Anthropic's API marks thinking as redacted or omitted, Claude Export Hub will only include an official placeholder.
-
-For bulk exports (Pick chats / All chats), thinking is extracted from the conversation payload, a **automatic per-chat page visit** that scrapes visible status panels from the rendered UI, and any prior cache for that chat. During bulk export with **Visible thinking** enabled, the extension briefly opens each selected chat in your Claude tab, expands status panels where possible, captures the visible text, then restores your original tab URL when finished. Live DOM capture without navigation applies when exporting the chat you currently have open (**This chat**).
-
-## Folder layout
-
-Each exported chat gets its own folder inside the ZIP:
-
-```
-Chat_Title_a1b2c3d4/
-  _combined.txt           # all files in this chat merged into one context file
-  _combined_deduped.txt   # same, with numbered paragraphs and duplicates removed
-  chat.md                 # when Transcript is checked
-  artifacts/              # <antArtifact> and artifact-like content blocks
-    _combined.txt          # artifacts-only combined (when 2+ files)
-    _combined_deduped.txt
-  attachments/            # uploaded attachment excerpts with usable text
-  presented-files/        # presented file payloads (for example files_v2)
-  generated-files/        # generated/tool output files
-  files_index.json        # manifest of exported files across the folders above
-  pasted/                 # when Pasted is checked
-  thinking/               # when Visible thinking is checked
-    _combined.txt          # thinking-only combined (when 2+ files)
-    _combined_deduped.txt
-  skipped.txt             # optional notes when a category had nothing to export
-_combined.txt             # (multi/all export) everything across all chats
-_combined_deduped.txt
-```
-
-`_combined.txt` files flatten every file in a folder (and its subfolders) into a single text document with visual section markers — useful for sharing exported chat context. `_combined_deduped.txt` adds numbered paragraph IDs and replaces duplicate paragraphs with cross-references, reducing redundancy when the same content appears across multiple files. Combined files are only generated for folders containing 2 or more text files.
-
-When visible thinking/status panels are exported, each block becomes a numbered markdown file under `thinking/`, plus a `thinking_index.json` manifest. Partial captures during an in-progress response are marked with a `_partial` suffix. Status panel files include `expanded` / `collapsed` metadata when detectable.
-
-Attachment and content-block excerpts are also included **inline in `chat.md`** (quoted blocks), in addition to any standalone files saved under `attachments/`, `presented-files/`, or `generated-files/`.
+- **Claude: ZIP export.** This chat, pick chats or all chats, as a ZIP of `chat.md`, artifacts, pasted text and visible thinking, plus combined/deduplicated text files. There is also a floating button on claude.ai chat pages.
+- **ChatGPT: Attachments & transcript.** Scan the open chat's attachments, download them one by one (verified sizes, retry and resume), and save the transcript as Markdown or JSON. Details: [docs/chatgpt/README-chatgpt-attachment-downloader.md](docs/chatgpt/README-chatgpt-attachment-downloader.md), [SECURITY](docs/chatgpt/SECURITY.md), [PRIVACY](docs/chatgpt/PRIVACY.md).
 
 ## Privacy
 
-- Processing is entirely local
-- No data is sent to third-party servers
-- Fetches only Claude's own API using your browser session cookies
+- All processing is local. The extension only talks to claude.ai and chatgpt.com (and the file-storage hosts they hand out), using your browser session.
+- No analytics, no remote code, no third-party servers.
+- ChatGPT credentials stay in the chatgpt.com page's memory and are never stored.
 
-## Known limitations
+## Limitations
 
-- Claude's UI and API can change without notice; exports may need updates
-- Collapsed status panels may export title-only placeholders when body text is not rendered in the DOM
-- Some DOM artifact cards or attachments may export as metadata-only placeholders if the API payload lacks both readable text and a safe download URL
-- Visible thinking export captures what Claude shows in the UI, not hidden or encrypted reasoning
-- Large bulk exports can take time; progress and cancel are available in the popup. Bulk exports with **Visible thinking** visit each chat in the browser (~3–5 seconds per chat) to capture status panels.
-- Not affiliated with or endorsed by Anthropic
+- Both sites change their web apps and internal APIs without notice, so the extension needs updates from time to time. The raw `conversation.json` is always kept, so transcripts can be rebuilt later.
+- Hidden reasoning can't be recovered. On both sites, most thinking is stored as summaries only.
+- Not affiliated with or endorsed by Anthropic or OpenAI.
 
-## Future features
+## Develop
 
-- **Advanced context compression**: Implement smarter ways to compress context from generated combined files beyond simple paragraph-level deduplication. Future improvements could include semantic similarity deduplication, LLM-friendly summarization of repeated boilerplate, token-count-aware truncation, cross-chat deduplication, and structural compression.
-- **Comprehensive attachment extraction**: Fully extract and parse text from document attachments (such as PDFs, Markdown, and text files) while leaving images and other non-text media assets unaltered.
-
-## Troubleshooting
-
-- **"Could not connect to Claude tab"** — After reloading the extension, refresh any open claude.ai tabs and try again. Bulk exports (Pick chats / All chats) need an open Claude tab; the extension will reconnect automatically when possible.
-- **No thinking/ folder** — Uncheck/re-check **Visible thinking**, then re-export. For **Pick chats** / **All chats**, the extension visits each chat automatically to scrape status panels; keep a claude.ai tab open and allow the export to finish (the tab will flip through chats and restore your original URL at the end). Redacted or omitted thinking cannot be recovered.
-- **No artifacts found** — Confirm **Artifacts** is checked. Newer chats may store files under `files`, `files_v2`, or content blocks instead of `<antArtifact>` tags. If Claude only shows a file card without extractable text in the API payload, the exporter can include metadata in `chat.md` but not a standalone file.
-- **Export seems stuck** — Use Cancel in the popup; large All chats exports can take several minutes.
-- **Debug counts** — Open the service worker console (`chrome://extensions` → Claude Export Hub → Service worker). Each export logs a one-line diagnostics summary with message, file, and status-panel counts.
-
-## Development and fixture tests
-
-Install dev dependencies:
+```
+manifest.json, background.js, automation.js   one extension; the worker loads both halves
+popup/                                       the backup popup
+claude/                                      Claude half (plain files, no build)
+src/chatgpt/  →  chatgpt/                    ChatGPT half: readable source → built bundles (npm run build)
+scripts/claude, scripts/chatgpt              official-export, verify and rerender tools
+test/claude, test/chatgpt                    unit, integration and browser tests
+```
 
 ```bash
 npm install
+npm run build     # after editing src/chatgpt
+npm run check     # manifest, referenced files, syntax, versions, page rules
+npm test          # Claude + ChatGPT unit/integration tests
+CAD_CHROMIUM_EXECUTABLE=<Chromium> npm run test:chatgpt:browser   # real-Chromium fixture for the attachments tool
 ```
 
-Run all tests (synthetic payload tests + saved Claude HTML fixtures):
+Branded Chrome 137+ ignores `--load-extension`. For browser tests, use Playwright's Chromium or Chrome for Testing.
 
-```bash
-npm test
-```
+## Acknowledgements and license
 
-Run only fixture HTML tests:
-
-```bash
-npm run test:fixtures
-```
-
-Fixture pages live outside the repo by default at:
-
-`/Users/lekan/Downloads/cchats_for_coding/split-pages`
-
-Override with:
-
-```bash
-CAD_FIXTURE_ROOT=/path/to/split-pages npm run test:fixtures
-```
-
-Fixture folders are read-only reference HTML. Tests load each folder's `index.html` with JSDOM and verify status-panel extraction against the current Claude DOM shape.
-
-## Installation
-
-1. Clone or download this repository
-2. Open `chrome://extensions` in Google Chrome
-3. Enable **Developer mode**
-4. Click **Load unpacked** and select this directory
-
-## Acknowledgements
-
-This project began as a fork of [ashwanthkumar/claude-artifacts-downloader](https://github.com/ashwanthkumar/claude-artifacts-downloader), an MIT-licensed Chrome extension for downloading Claude artifacts from a conversation.
-
-Claude Export Hub significantly extends that original idea with multi-chat export, selected-chat export, all-chat export, per-chat folder organization, transcript export, pasted-content export, visible thinking export, attachment/content-block handling, and a redesigned export workflow.
-
-Portions of the original extension structure and artifact extraction approach are derived from `claude-artifacts-downloader`. The original MIT license and copyright notice are preserved in [LICENSE](LICENSE) and [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
-
-The project was also inspired by [hamelsmu/claudesave](https://github.com/hamelsmu/claudesave).
-
-## License
-
-[MIT License](LICENSE)
+[MIT License](LICENSE). See [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md) (claude-artifacts-downloader, claudesave) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (pionxzh/chatgpt-exporter).

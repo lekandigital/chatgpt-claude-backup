@@ -8,10 +8,10 @@ it fetches chats the list endpoints hide (incognito chats), tries every file
 ID through /files/{id}/contents, and opens projects by ID.
 
 Usage:
-    python3 -I scripts/hints-from-official-export.py <extracted export dir> [out.json]
+    python3 -I scripts/claude/hints-from-official-export.py <extracted export dir> [out.json]
 
 <extracted export dir> holds the unzipped parts, e.g. conversations/conversations.json
-and projects/projects/*.json. The output defaults to archive-hints.json next to
+and projects/projects/*.json. The output defaults to claude/archive-hints.json in
 manifest.json (git-ignored: it contains chat titles).
 """
 import glob
@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 
 export_dir = sys.argv[1]
-out_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "archive-hints.json")
+out_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "claude", "archive-hints.json")
 
 conversations_path = next(iter(glob.glob(os.path.join(export_dir, "**", "conversations.json"), recursive=True)), None)
 if not conversations_path:

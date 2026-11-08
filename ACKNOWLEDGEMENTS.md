@@ -1,5 +1,10 @@
 # Acknowledgements
 
+ChatGPT + Claude Backup combines two of the author's extensions: **Claude Export Hub** (this repository's
+earlier name) and **ChatGPT Attachment Downloader** ([lekandigital/chatgpt-attachment-downloader](https://github.com/lekandigital/chatgpt-attachment-downloader)),
+whose ChatGPT archiver lives in `src/chatgpt/`. Third-party code notices are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## claude-artifacts-downloader
 
 This project began as a fork of [ashwanthkumar/claude-artifacts-downloader](https://github.com/ashwanthkumar/claude-artifacts-downloader), an MIT-licensed Chrome extension for downloading Claude artifacts from a conversation.

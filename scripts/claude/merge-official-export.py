@@ -3,7 +3,7 @@
 
 Run after the Full archive (with archive-hints.json) has finished:
 
-    python3 -I scripts/merge-official-export.py "<Downloads/Claude Full Archive>" <extracted export dir>
+    python3 -I scripts/claude/merge-official-export.py "<Downloads/Claude Full Archive>" <extracted export dir>
 
 It adds:
   _official-export-only/   chats Claude no longer serves (purged incognito or

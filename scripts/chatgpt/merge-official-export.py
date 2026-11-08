@@ -3,7 +3,7 @@
 
 Run after the Full archive has finished:
 
-    python3 -I scripts/merge-official-export.py "<ChatGPT Full Archive>" <export.zip> [--dry-run]
+    python3 -I scripts/chatgpt/merge-official-export.py "<ChatGPT Full Archive>" <export.zip> [--dry-run]
 
 The live archive is richer than the export (widget Markdown, dictation pointers, citations,
 reasoning times), so it stays the primary copy. The export fills what the live API can no

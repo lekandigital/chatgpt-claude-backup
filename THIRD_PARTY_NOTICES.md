@@ -4,13 +4,13 @@
 
 <https://github.com/pionxzh/chatgpt-exporter>. The adapted parts were taken from `master` in October 2026 (userscript v2.38.0).
 
-- `src/core/transcript.js` adapts the exporter's rules for:
+- `src/chatgpt/core/transcript.js` adapts the exporter's rules for:
   - which conversation messages are part of the visible chat (`processConversation`, `shouldSkipMessageInExport`);
   - how continuation replies are merged;
   - how `content_references` citations and sources footnotes are rendered (`src/utils/citations.ts`).
 
   The code was rewritten in this project's style; no build-time dependency is used.
-- `tests/fixtures/thinking-summaries.json` and `tests/fixtures/image-generation.json` are copied unchanged from that repository's `tests/fixtures/`.
+- `test/chatgpt/fixtures/thinking-summaries.json` and `test/chatgpt/fixtures/image-generation.json` are copied unchanged from that repository's `tests/fixtures/`.
 
 ```text
 MIT License
