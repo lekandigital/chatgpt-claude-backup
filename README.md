@@ -20,12 +20,13 @@ Click the toolbar icon. The popup opens on the **Claude** or **ChatGPT** tab, de
 
 | Button | What it does |
 |---|---|
-| **Back up this chat** | The chat open in the current tab, always a fresh copy. If the chat is in a project, the project is saved too. Progress shows in the popup. |
-| **Back up this project** | Shown on a project page, or on a ChatGPT chat inside a project: every chat in the project, plus the project's settings, instructions, knowledge files (and, on Claude, project memory and synced sources). |
-| **Choose chats…** | Opens the backup page with your chat list: filter by title or project, tick chats (or **Choose all shown**), then **Archive listed chats**. |
-| **Back up all chats** | Asks once to confirm, then backs up the whole account, followed by projects and account-level data. |
+| **Back up this chat** | Saves the open chat as one folder straight into Downloads, e.g. `Downloads/2026-11-08 Chat title [a1b2c3d4]/`. If the chat is in a project, the project's instructions and files go inside it, in `project/`. Progress shows in the popup. |
+| **Back up this project** | Shown on a project page, or on a ChatGPT chat inside a project. Saves one folder named after the project, e.g. `Downloads/My project [1a2b3c4d]/`. It holds the project's settings, instructions and knowledge files (and, on Claude, project memory and synced sources), plus one folder per chat. |
+| **Choose chats…** | Opens the backup page with your chat list: filter by title or project, tick chats (or **Choose all shown**), then **Archive listed chats**. Each chat is saved straight into Downloads as above. |
+| **Back up all chats** | Asks once to confirm, then backs up the whole account into `Downloads/Claude Backup/` or `Downloads/ChatGPT Backup/`, followed by projects and account-level data. |
 
-- **Folder inside Downloads** defaults to `Claude Full Archive` / `ChatGPT Full Archive`. The extension remembers which chats each folder already has, so running again only saves new or changed chats. Tick **Redo chats already saved in this folder** to refresh them anyway.
+- A chat, chosen chats and a project are always saved fresh, with nothing else added to Downloads.
+- **Back up all chats** remembers which chats that folder already has, so running it again only saves new or changed chats. Tick **Redo chats already saved there** (shown when you confirm) to refresh them anyway. To use another folder, such as an existing archive, type its name into **Folder inside Downloads** on the backup page.
 - **Last backup** shows the latest run (live while it runs). **Show** jumps to its tab.
 - Keep the backup tab open until it says *Done*. Closing the popup is fine.
 - **Backup page** opens the full page with all options. The other link opens the older tools (see [Older tools](#older-tools)).
@@ -39,8 +40,10 @@ Click the toolbar icon. The popup opens on the **Claude** or **ChatGPT** tab, de
 
 ### Claude
 
+One chat (or each chosen chat) is a chat folder, as below, straight in Downloads. A project is a folder named after the project, with `project.json`, `instructions.md`, `docs/`, `files/` and `memory.json` at the top and one chat folder per chat. *Back up all chats* writes:
+
 ```
-Claude Full Archive/
+Claude Backup/
   _index.md / _index.json       every chat with counts per category (full runs)
   _conversations.json           the chat list as Claude returned it
   _status.json                  live progress and recent log (rewritten every ~15 s)
@@ -59,6 +62,7 @@ Claude Full Archive/
     created-files/              other files Claude created, rebuilt from the chat
     file-versions/              earlier versions of rewritten files
     artifacts/                  final version of each artifact
+    project/                    the chat's project (single-chat and chosen-chat backups)
     manifest.json               every file, how it was fetched, and anything that failed
 ```
 
@@ -66,8 +70,10 @@ Incognito (temporary) chats never appear in Claude's lists. Recent ones can stil
 
 ### ChatGPT
 
+As for Claude: a chat folder (or a project folder) straight in Downloads, or for *Back up all chats*:
+
 ```
-ChatGPT Full Archive/
+ChatGPT Backup/
   _index.md / _index.json        every chat with counts (full runs)
   _conversations.json            the chat list as ChatGPT returned it
   _status.json                   live progress and recent log
@@ -84,6 +90,7 @@ ChatGPT Full Archive/
     outputs/                     generated images, charts, Code Interpreter files
     files/                       files listed for the chat but not linked from a message
     canvas/                      final canvas documents
+    project/                     the chat's project (single-chat and chosen-chat backups)
     manifest.json                every file, how it was fetched, and anything that failed
 ```
 
@@ -93,8 +100,8 @@ Expected failures, recorded in `manifest.json`: Code Interpreter sandbox files e
 
 - The backup page is an extension tab, so a long run doesn't depend on the service worker staying awake.
 - Requests run inside a background claude.ai or chatgpt.com tab, with the same session as the site. ChatGPT's bearer token is read from its own session endpoint and never leaves that tab.
-- Files are written with `chrome.downloads` straight into `Downloads/<folder>/`, with no ZIP and no save dialogs.
-- Finished chats are remembered per folder in `chrome.storage`, so an interrupted run resumes where it stopped.
+- Files are written with `chrome.downloads` straight into Downloads (or `Downloads/<folder>/` for full runs), with no ZIP and no save dialogs.
+- Full runs remember finished chats per folder in `chrome.storage`, so an interrupted run resumes where it stopped.
 - Timers run in a worker, so a hidden tab isn't throttled to one tick a minute.
 - If claude.ai shows a Cloudflare "Just a moment…" check, the run reloads its tab and waits. If the check needs a click, open the background claude.ai tab and complete it.
 
@@ -107,7 +114,7 @@ Each site's official export (Settings → Data controls / Privacy → Export) li
 ```bash
 python3 -I scripts/claude/hints-from-official-export.py "<unzipped export>"   # writes claude/archive-hints.json (git-ignored)
 # Reload the extension, run Back up all chats: it also tries every chat, file and project the export knows
-python3 -I scripts/claude/merge-official-export.py "$HOME/Downloads/Claude Full Archive" "<unzipped export>"
+python3 -I scripts/claude/merge-official-export.py "$HOME/Downloads/Claude Backup" "<unzipped export>"
 ```
 
 The merge adds `_official-export-only/` (chats Claude no longer serves), `_official-export/` (memories, design chats, published artifacts, Claude Code cloud) and `_coverage.md`.
@@ -115,9 +122,9 @@ The merge adds `_official-export-only/` (chats Claude no longer serves), `_offic
 **ChatGPT**
 
 ```bash
-python3 -I scripts/chatgpt/merge-official-export.py "$HOME/Downloads/ChatGPT Full Archive" <export.zip>   # _library, _codex, recovered files, _coverage.md
-python3 -I scripts/chatgpt/verify-archive.py "$HOME/Downloads/ChatGPT Full Archive"                      # independent completeness check
-node scripts/chatgpt/rerender.mjs "$HOME/Downloads/ChatGPT Full Archive" [--write]                        # rebuild transcripts offline after a renderer fix
+python3 -I scripts/chatgpt/merge-official-export.py "$HOME/Downloads/ChatGPT Backup" <export.zip>   # _library, _codex, recovered files, _coverage.md
+python3 -I scripts/chatgpt/verify-archive.py "$HOME/Downloads/ChatGPT Backup"                      # independent completeness check
+node scripts/chatgpt/rerender.mjs "$HOME/Downloads/ChatGPT Backup" [--write]                        # rebuild transcripts offline after a renderer fix
 python3 -I scripts/chatgpt/seed-from-archive.py "<archive folder>"   # carry finished-chat state to another computer (chatgpt/archive-state.json)
 ```
 
@@ -135,7 +142,7 @@ open -g "https://chatgpt.com/#ccb=$T&cmd=archive&ids=<id>,<id>&root=Test&force=1
 open -g "https://chatgpt.com/#ccb=$T&cmd=archive&project=g-p-<id>"                    # one ChatGPT project
 ```
 
-The archiver is picked from the site the link opens on (or `site=claude|chatgpt`). More options: `extra=` (unlisted Claude chats), `redo=` (re-archive chosen ChatGPT chats), `probe=path|path` (save raw API responses to `_probe/`), and `account=1` (ChatGPT account data only). The older `#ceh=` and `#cga=` prefixes still work. Watch `Downloads/<root>/_status.json` for progress.
+Without `root=`, chosen chats and projects go straight into Downloads and write no `_status.json`. Give `root=` to keep the old behaviour (a folder, `_status.json`, resume). The archiver is picked from the site the link opens on (or `site=claude|chatgpt`). More options: `extra=` (unlisted Claude chats), `redo=` (re-archive chosen ChatGPT chats), `probe=path|path` (save raw API responses to `_probe/`), and `account=1` (ChatGPT account data only). The older `#ceh=` and `#cga=` prefixes still work. Watch `Downloads/<root>/_status.json` for progress.
 
 ## Older tools
 

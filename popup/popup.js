@@ -9,26 +9,26 @@ const SITES = {
     host: "claude.ai",
     page: "claude/archive.html",
     idsParam: "uuids",
-    defaultRoot: "Claude Full Archive",
+    folder: "Claude Backup",
     chatId: (url) => url.pathname.match(new RegExp(`^/chat/(${UUID})`, "i"))?.[1] || null,
     projectId: (url) => url.pathname.match(new RegExp(`^/project/(${UUID})`, "i"))?.[1] || null,
     cleanTitle: (title) => title.replace(/\s+[-–]\s+Claude$/, "").trim(),
     more: { label: "ZIP export (older modes)", page: "../claude/zip-export.html" },
     allWarning:
-      "Saves every chat, then your projects and account files, into the folder. Chats this extension already saved there and unchanged are skipped (tick Redo if you deleted or moved the folder). Keep the tab that opens until it says Done.",
+      "Saves every chat, then your projects and account files, into Downloads/Claude Backup/. Running it again skips chats already saved there that haven't changed (tick Redo if you deleted or moved the folder). Keep the tab that opens until it says Done.",
   },
   chatgpt: {
     name: "ChatGPT",
     host: "chatgpt.com",
     page: "chatgpt/archive/archive.html",
     idsParam: "ids",
-    defaultRoot: "ChatGPT Full Archive",
+    folder: "ChatGPT Backup",
     chatId: (url) => url.pathname.match(new RegExp(`/c/(${UUID})`, "i"))?.[1] || null,
     projectId: (url) => url.pathname.match(/^\/g\/(g-p-[0-9a-f]{32})/i)?.[1] || null,
     cleanTitle: (title) => title.replace(/^ChatGPT\s+[-–]\s+/, "").trim(),
     more: { label: "Attachments & transcript", page: "../chatgpt/popup/popup.html" },
     allWarning:
-      "ChatGPT allows about one chat read a minute after the first ~200, so a large account takes many hours and your own ChatGPT use may be rate-limited meanwhile. Chats this extension already saved in the folder and unchanged are skipped (tick Redo if you deleted or moved the folder). Keep the tab that opens.",
+      "Saves every chat into Downloads/ChatGPT Backup/. ChatGPT allows about one chat read a minute after the first ~200, so a large account takes many hours and your own ChatGPT use may be rate-limited meanwhile. Running it again skips chats already saved there that haven't changed (tick Redo if you deleted or moved the folder). Keep the tab that opens.",
   },
 };
 const TERMINAL = new Set(["done", "stopped", "error", "interrupted"]);
@@ -75,10 +75,10 @@ function renderContext() {
   })();
   if (page.chatId) {
     $("context-title").textContent = page.title || `${cfg.name} chat`;
-    $("context-note").textContent = page.projectId ? "Chat in a project — its project is saved too." : `Chat ${page.chatId.slice(0, 8)}`;
+    $("context-note").textContent = page.projectId ? "Chat in a project — the project is saved inside the chat's folder." : `Chat ${page.chatId.slice(0, 8)}`;
   } else if (page.projectId) {
     $("context-title").textContent = page.title || `${cfg.name} project`;
-    $("context-note").textContent = "Project page — back up all of its chats and files.";
+    $("context-note").textContent = "Project page — its chats and files go into one folder named after it.";
   } else if (onSite) {
     $("context-title").textContent = cfg.name;
     $("context-note").textContent = "Open a chat to back it up on its own.";
@@ -102,21 +102,10 @@ function render() {
   $("all").disabled = running;
   $("all").classList.toggle("confirm", confirmingAll);
   $("all").textContent = confirmingAll ? `Start: back up every ${cfg.name} chat` : "Back up all chats";
-  $("all-warning").hidden = !confirmingAll;
+  $("all-confirm").hidden = !confirmingAll;
   $("all-warning").textContent = cfg.allWarning;
+  $("save-note").textContent = `A chat or chosen chats save straight into Downloads, a project into one folder there, and all chats into Downloads/${cfg.folder}/.`;
   $("more-tool").textContent = cfg.more.label;
-}
-
-async function loadRoot() {
-  const key = `popup:root:${site}`;
-  const stored = await storageGet(key);
-  $("root").value = stored[key] || SITES[site].defaultRoot;
-}
-
-function saveRoot() {
-  const value = $("root").value.trim() || SITES[site].defaultRoot;
-  chrome.storage.local.set({ [`popup:root:${site}`]: value }).catch(() => {});
-  return value;
 }
 
 async function renderStatus() {
@@ -143,7 +132,7 @@ async function renderStatus() {
   $("status").hidden = false;
   $("status-fill").style.width = `${s.total ? Math.round((100 * s.processed) / s.total) : TERMINAL.has(s.phase) ? 100 : 0}%`;
   $("status-line").textContent =
-    `${running ? "Running" : s.phase} · ${what} → ${s.root} · ${s.processed}/${s.total || "?"} chats · ` +
+    `${running ? "Running" : s.phase} · ${what} → ${s.root ? `Downloads/${s.root}` : "Downloads"} · ${s.processed}/${s.total || "?"} chats · ` +
     `${s.archived} saved, ${s.skipped} unchanged, ${s.failed} failed · ${ago}`;
   $("status-log").textContent = s.current && running ? `Now: ${s.current}` : s.last_log || "";
   $("show-run").hidden = !pageOpen;
@@ -156,7 +145,7 @@ async function renderStatus() {
 }
 
 async function openBackupPage(query, active) {
-  const params = new URLSearchParams({ root: saveRoot(), ...query });
+  const params = new URLSearchParams(query);
   const created = await chrome.tabs.create({ url: chrome.runtime.getURL(`${SITES[site].page}?${params}`), active });
   // Block a second start (double click) until the new page reports in.
   if (query.auto === "1") {
@@ -174,15 +163,13 @@ async function selectSite(next) {
   site = next;
   confirmingAll = false;
   chrome.storage.local.set({ "popup:site": site }).catch(() => {});
-  await loadRoot();
   await renderStatus();
 }
 
 $("tab-claude").addEventListener("click", () => selectSite("claude"));
 $("tab-chatgpt").addEventListener("click", () => selectSite("chatgpt"));
-$("root").addEventListener("change", saveRoot);
 
-// One chat: always a fresh copy; it runs in a background tab and reports here.
+// One chat and a project: always a fresh copy straight into Downloads, in a background tab that reports here.
 $("this-chat").addEventListener("click", async () => {
   if (!page.chatId) return;
   await openBackupPage({ auto: "1", [SITES[site].idsParam]: page.chatId, force: "1" }, false);
@@ -191,12 +178,12 @@ $("this-chat").addEventListener("click", async () => {
 });
 $("this-project").addEventListener("click", async () => {
   if (!page.projectId) return;
-  await openBackupPage({ auto: "1", project: page.projectId, ...force() }, false);
+  await openBackupPage({ auto: "1", project: page.projectId }, false);
   $("status-line").textContent = "Starting…";
   $("status").hidden = false;
 });
 $("choose").addEventListener("click", async () => {
-  await openBackupPage({ pick: "1", ...force() }, true);
+  await openBackupPage({ pick: "1" }, true);
   window.close();
 });
 $("all").addEventListener("click", async () => {

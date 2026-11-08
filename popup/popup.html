@@ -29,12 +29,12 @@
         <button type="button" id="this-project" hidden>Back up this project</button>
         <button type="button" id="choose">Choose chats…</button>
         <button type="button" id="all">Back up all chats</button>
-        <p id="all-warning" class="warning" hidden></p>
+        <div id="all-confirm" hidden>
+          <p id="all-warning" class="warning"></p>
+          <label class="check"><input type="checkbox" id="force" /> Redo chats already saved there</label>
+        </div>
       </div>
-
-      <label class="field" for="root">Folder inside Downloads</label>
-      <input type="text" id="root" spellcheck="false" />
-      <label class="check"><input type="checkbox" id="force" /> Redo chats already saved in this folder</label>
+      <p id="save-note" class="note muted"></p>
 
       <section id="status" class="status" hidden>
         <div class="status-top">

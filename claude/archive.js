@@ -10,7 +10,7 @@
 
 const LOG_PREFIX = "[ChatGPT + Claude Backup][claude archive]";
 const STATE_KEY = "fullArchiveState";
-const DEFAULT_ROOT = "Claude Full Archive";
+const DEFAULT_ROOT = "Claude Backup";
 const ROOT_MESSAGE_UUID = "00000000-0000-4000-8000-000000000000";
 const API_DELAY_MS = 350;
 const MAX_ATTEMPTS = 6;
@@ -43,8 +43,12 @@ let stopRequested = false;
 let runActive = false; // this page's run is going (only then does it heartbeat and update the popup)
 let workerTabId = null;
 let ownsWorkerTab = false;
+// rootDir "" = straight into Downloads. keepRecords: this run writes _status.json and the other
+// bookkeeping files, and remembers finished chats (all-chats runs, or a folder named on the page).
 let rootDir = DEFAULT_ROOT;
+let keepRecords = true;
 let status = null;
+const inFolder = (folder, name) => (folder ? `${folder}/${name}` : name);
 
 // ── Small helpers ────────────────────────────────────────────────────
 
@@ -414,6 +418,12 @@ function waitForDownload(id, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
 // Path (relative to the root folder) of the file Chrome actually wrote.
 async function finalRelativePath(id, requested) {
   const [item] = await chrome.downloads.search({ id });
+  if (!rootDir) {
+    // Straight into Downloads: keep the path from the requested top folder on.
+    const top = `/${requested.split("/")[0]}/`;
+    const at = item?.filename ? item.filename.lastIndexOf(top) : -1;
+    return at >= 0 ? item.filename.slice(at + 1) : requested;
+  }
   const marker = `/${rootDir}/`;
   const at = item?.filename ? item.filename.lastIndexOf(marker) : -1;
   return at >= 0 ? item.filename.slice(at + marker.length) : requested.slice(rootDir.length + 1);
@@ -422,7 +432,7 @@ async function finalRelativePath(id, requested) {
 async function saveBlob(relPath, blob) {
   const url = URL.createObjectURL(blob);
   try {
-    let filename = `${rootDir}/${safePath(relPath)}`;
+    let filename = inFolder(rootDir, safePath(relPath));
     for (let attempt = 0; attempt < 2; attempt++) {
       const id = await withTimeout(
         chrome.downloads.download({ url, filename, conflictAction: "overwrite", saveAs: false }),
@@ -457,7 +467,7 @@ async function saveBlob(relPath, blob) {
 // For files too big to pass back from the page: let Chrome's own download
 // stack fetch them with the browser's claude.ai cookies.
 async function saveUrl(relPath, url) {
-  const filename = `${rootDir}/${safePath(relPath)}`;
+  const filename = inFolder(rootDir, safePath(relPath));
   const id = await withTimeout(
     chrome.downloads.download({ url, filename, conflictAction: "overwrite", saveAs: false }),
     60000,
@@ -982,6 +992,7 @@ async function archiveAccountFiles(orgId, prefix, folderByConv, savedUuids, only
       continue;
     }
     const home = convs.map((c) => folderByConv.get(c)).find(Boolean);
+    if (!home && !keepRecords) continue; // its chat failed; nowhere to put it outside a backup folder
     const dir = home ? `${home}/file-versions` : `${prefix}_account-files`;
     const stamp = String(file.created_at || "").slice(0, 16).replace("T", " ").replace(":", "");
     const result = await downloadFirstWorking(
@@ -1002,7 +1013,7 @@ async function archiveAccountFiles(orgId, prefix, folderByConv, savedUuids, only
     }
   }
   await saveState(state);
-  await saveJson(`${prefix}_account-files${onlyConvs ? ".selected" : ""}.json`, index);
+  if (keepRecords) await saveJson(`${prefix}_account-files${onlyConvs ? ".selected" : ""}.json`, index);
   log(`account files: ${saved} extra saved (earlier versions / not referenced by any chat payload), ${index.filter((e) => e.status === "failed").length} failed`);
 }
 
@@ -1034,6 +1045,7 @@ async function archiveHintFiles(orgId, prefix, hintFiles, folderByConv, savedUui
       continue;
     }
     const home = folderByConv.get(hint.conversation_uuid);
+    if (!home && !keepRecords) continue;
     const dir = home
       ? `${home}/file-versions`
       : `${prefix}_files-from-unavailable-chats/${safeSegment(hint.conversation_name, "Untitled", 60)} [${hint.conversation_uuid.slice(0, 8)}]`;
@@ -1055,7 +1067,7 @@ async function archiveHintFiles(orgId, prefix, hintFiles, folderByConv, savedUui
     }
   }
   await saveState(state);
-  await saveJson(`${prefix}_hint-files${selectedOnly ? ".selected" : ""}.json`, index);
+  if (keepRecords) await saveJson(`${prefix}_hint-files${selectedOnly ? ".selected" : ""}.json`, index);
   const unavailable = index.filter((e) => e.status === "unavailable").length;
   log(`hinted files: ${index.length} checked, ${fetched} newly fetched, ${unavailable} no longer available`);
 }
@@ -1063,7 +1075,8 @@ async function archiveHintFiles(orgId, prefix, hintFiles, folderByConv, savedUui
 // ── Projects ─────────────────────────────────────────────────────────
 
 // only: a Set of project UUIDs to limit the pass to (selected chats, project mode).
-async function archiveProjects(orgId, prefix, hintProjects = [], only = null) {
+// placeAt(project): the folders to save that project into (default: _projects/<name>/).
+async function archiveProjects(orgId, prefix, hintProjects = [], only = null, placeAt = null) {
   let projects = [];
   try {
     const data = await apiJson(`/api/organizations/${orgId}/projects?include_harmony_projects=true`);
@@ -1078,42 +1091,47 @@ async function archiveProjects(orgId, prefix, hintProjects = [], only = null) {
     for (const uuid of only) if (!projects.some((p) => p.uuid === uuid)) projects.push({ uuid, name: uuid });
   }
   for (const project of projects) {
-    const nameIn = makeNamer();
     try {
       // Details first: projects missing from the list (e.g. starter projects) only get their name here.
       const detail = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}`).catch(() => project);
       if (detail?.name && project.name === project.uuid) project.name = detail.name;
-      const folder = `${prefix}_projects/${safeSegment(project.name, project.uuid)} [${project.uuid.slice(0, 8)}]`;
-      await saveJson(`${folder}/project.json`, detail);
-      if (detail.prompt_template) await saveText(`${folder}/instructions.md`, detail.prompt_template, "text/markdown");
-      const listFailed = (what) => (error) => {
-        log(`  project ${what} unavailable: ${error.message.slice(0, 160)}`);
-        status.errors.push({ project: project.uuid, step: what, error: error.message.slice(0, 300) });
-        return [];
-      };
-      const docs = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/docs`).catch(listFailed("docs"));
-      for (const doc of Array.isArray(docs) ? docs : []) {
-        await saveText(nameIn(`${folder}/docs`, withExtension(doc.file_name || doc.uuid, "text/plain")), doc.content || "");
-      }
-      // Project memory and synced knowledge sources (GitHub, Google Drive…), when there are any.
-      const memory = await apiJson(`/api/organizations/${orgId}/memory?project_uuid=${project.uuid}`, 2).catch(() => null);
-      if (memory && (memory.memory || memory.controls || memory.project_import)) {
-        await saveJson(`${folder}/memory.json`, memory);
-        if (typeof memory.memory === "string" && memory.memory.trim()) await saveText(`${folder}/memory.md`, memory.memory, "text/markdown");
-      }
-      const syncs = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/syncs`, 2).catch(() => []);
-      if (Array.isArray(syncs) ? syncs.length : syncs && Object.keys(syncs).length) await saveJson(`${folder}/syncs.json`, syncs);
-      const projectFiles = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/files`).catch(listFailed("files"));
-      for (const file of Array.isArray(projectFiles) ? projectFiles : projectFiles.files || []) {
-        const result = await downloadFirstWorking(fileCandidateUrls(file, orgId, null), (name) => nameIn(`${folder}/files`, name), file.file_name || null);
-        if (!result.ok) log(`  project file failed: ${file.file_name} (${result.errors.join("; ")})`);
-      }
-      log(`project: ${project.name} (${Array.isArray(docs) ? docs.length : 0} docs)`);
+      const targets = placeAt ? placeAt(project) : [`${prefix}_projects/${safeSegment(project.name, project.uuid)} [${project.uuid.slice(0, 8)}]`];
+      for (const folder of targets) await saveProject(orgId, project, detail, folder);
     } catch (error) {
       log(`project failed: ${project.name}: ${error.message}`);
     }
   }
   return projects.length;
+}
+
+// One project into one folder ("" = the top of the run's folder).
+async function saveProject(orgId, project, detail, folder) {
+  const nameIn = makeNamer();
+  await saveJson(inFolder(folder, "project.json"), detail);
+  if (detail.prompt_template) await saveText(inFolder(folder, "instructions.md"), detail.prompt_template, "text/markdown");
+  const listFailed = (what) => (error) => {
+    log(`  project ${what} unavailable: ${error.message.slice(0, 160)}`);
+    status.errors.push({ project: project.uuid, step: what, error: error.message.slice(0, 300) });
+    return [];
+  };
+  const docs = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/docs`).catch(listFailed("docs"));
+  for (const doc of Array.isArray(docs) ? docs : []) {
+    await saveText(nameIn(inFolder(folder, "docs"), withExtension(doc.file_name || doc.uuid, "text/plain")), doc.content || "");
+  }
+  // Project memory and synced knowledge sources (GitHub, Google Drive…), when there are any.
+  const memory = await apiJson(`/api/organizations/${orgId}/memory?project_uuid=${project.uuid}`, 2).catch(() => null);
+  if (memory && (memory.memory || memory.controls || memory.project_import)) {
+    await saveJson(inFolder(folder, "memory.json"), memory);
+    if (typeof memory.memory === "string" && memory.memory.trim()) await saveText(inFolder(folder, "memory.md"), memory.memory, "text/markdown");
+  }
+  const syncs = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/syncs`, 2).catch(() => []);
+  if (Array.isArray(syncs) ? syncs.length : syncs && Object.keys(syncs).length) await saveJson(inFolder(folder, "syncs.json"), syncs);
+  const projectFiles = await apiJson(`/api/organizations/${orgId}/projects/${project.uuid}/files`).catch(listFailed("files"));
+  for (const file of Array.isArray(projectFiles) ? projectFiles : projectFiles.files || []) {
+    const result = await downloadFirstWorking(fileCandidateUrls(file, orgId, null), (name) => nameIn(inFolder(folder, "files"), name), file.file_name || null);
+    if (!result.ok) log(`  project file failed: ${file.file_name} (${result.errors.join("; ")})`);
+  }
+  log(`project: ${project.name} (${Array.isArray(docs) ? docs.length : 0} docs) → ${folder || "top of the folder"}`);
 }
 
 // ── Run orchestration ────────────────────────────────────────────────
@@ -1153,11 +1171,13 @@ async function listConversations(orgId) {
 }
 
 async function loadState() {
+  if (!keepRecords) return { done: {} };
   const stored = (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || {};
   return stored[rootDir] || { done: {} };
 }
 
 async function saveState(state) {
+  if (!keepRecords) return;
   const stored = (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || {};
   // Merge rather than replace: another run into the same folder may have saved chats since this one started.
   const previous = stored[rootDir] || {};
@@ -1198,7 +1218,7 @@ async function writeStatusNow() {
     `${status.phase} · ${status.processed}/${status.total || "?"} chats · ` +
     `${status.archived} archived, ${status.skipped} unchanged, ${status.failed} failed`;
   try {
-    await saveJson("_status.json", status);
+    if (keepRecords) await saveJson("_status.json", status);
   } catch (error) {
     console.warn(LOG_PREFIX, "status write failed", error);
   }
@@ -1247,12 +1267,20 @@ function renderIndex(rows) {
 // project: a project UUID — archive that project's chats and the project itself.
 async function run({ uuids = null, extra = [], force = false, includeProjects = true, project = null }) {
   stopRequested = false;
-  rootDir = safeSegment(els.root.value || DEFAULT_ROOT, DEFAULT_ROOT);
   const selecting = Boolean(uuids || project);
   const mode = project ? "project" : uuids ? "selected" : "all";
+  // All chats: a folder in Downloads (Claude Backup unless the field names another) that
+  // remembers what it has, so re-runs only fetch new chats. One chat, chosen chats and a
+  // project save straight into Downloads (a project into a folder named after it), always
+  // fresh and without bookkeeping files, unless the field names a folder.
+  const named = els.root.value.trim();
+  keepRecords = mode === "all" || Boolean(named);
+  rootDir = keepRecords ? safeSegment(named || DEFAULT_ROOT, DEFAULT_ROOT) : "";
+  if (!keepRecords) force = true;
+  let lastFolder = null;
   status = { root: rootDir, mode, phase: "starting", started_at: new Date().toISOString(), total: 0, processed: 0, archived: 0, skipped: 0, failed: 0, current: null, errors: [], log: [] };
   setRunning(true);
-  log(`Archiving into Downloads/${rootDir}/ ${project ? `(project ${project})` : uuids ? `(${uuids.length} selected chats)` : "(every chat)"}`);
+  log(`Saving into Downloads/${rootDir ? `${rootDir}/` : ""} ${project ? `(project ${project})` : uuids ? `(${uuids.length} selected chats)` : "(every chat)"}`);
   await writeStatus({ phase: "listing" });
 
   const state = await loadState();
@@ -1267,11 +1295,11 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
     if (!orgs.length) throw new Error("No chat-capable organization found — is this Chrome profile signed in to claude.ai?");
     for (const org of orgs) {
       const orgId = org.uuid || org.id;
-      const prefix = orgs.length > 1 ? `${safeSegment(org.name, orgId)}/` : "";
+      const prefix = mode === "all" && orgs.length > 1 ? `${safeSegment(org.name, orgId)}/` : "";
       let conversations = await listConversations(orgId);
       let projectInOrg = false;
       log(`${org.name || orgId}: ${conversations.length} chats listed`);
-      await saveJson(`${prefix}_conversations.json`, conversations);
+      if (mode === "all") await saveJson(`${prefix}_conversations.json`, conversations);
       // Some chats (e.g. untitled ones from other surfaces) never appear in
       // the list endpoints but still open by ID; fetch those explicitly.
       const listed = new Set(conversations.map((c) => c.uuid));
@@ -1305,6 +1333,14 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
         conversations = conversations.filter((c) => projectUuidOf(c) === project);
       }
       if (project) log(`${conversations.length} chats in project ${conversations.find((c) => c.project?.name)?.project.name || project}`);
+      if (project && !rootDir && (projectInOrg || conversations.length)) {
+        // Straight into Downloads: the project gets a folder named after it.
+        const detail = await apiJson(`/api/organizations/${orgId}/projects/${project}`, 2).catch(() => null);
+        const name = detail?.name || conversations.find((c) => c.project?.name)?.project.name || project;
+        rootDir = `${safeSegment(name, project)} [${project.slice(0, 8)}]`;
+        status.root = rootDir;
+        log(`Project folder: Downloads/${rootDir}/`);
+      }
       // Projects of the selected chats are saved too (instructions, docs, files).
       const projectSet = new Set(selecting ? conversations.map(projectUuidOf).filter(Boolean) : []);
       if (project && (projectInOrg || conversations.length)) projectSet.add(project);
@@ -1334,6 +1370,7 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
             const s = row.stats;
             log(`  ✓ ${s.messages} msgs · ${s.thinking} thinking · ${s.pasted} pasted · ${s.uploads} uploads · ${s.outputs} outputs · ${s.toolImages} tool images · ${s.created} created · ${s.artifacts} artifacts${s.failed ? ` · ${s.failed} FAILED` : ""}`);
             state.done[summary.uuid] = { updated_at: summary.updated_at, folder, stats: s, fileUuids: result.fileUuids };
+            lastFolder = folder;
             await saveState(state);
             status.archived++;
           } catch (error) {
@@ -1380,15 +1417,26 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
         }
       } else if (includeProjects && projectSet.size && !stopRequested) {
         await writeStatus({ phase: "projects" });
-        await archiveProjects(orgId, prefix, [], projectSet);
+        // Project mode: the run's folder is the project's folder. Chosen chats: a project/
+        // folder inside each chat's folder, so one chat is one self-contained folder.
+        const placeAt = (p) =>
+          p.uuid === project
+            ? [""]
+            : conversations
+                .filter((c) => projectUuidOf(c) === p.uuid)
+                .map((c) => folderByConv.get(c.uuid))
+                .filter(Boolean)
+                .map((folder) => `${folder}/project`);
+        await archiveProjects(orgId, prefix, [], projectSet, placeAt);
       }
     }
     if (!selecting) {
       await saveText("_index.md", renderIndex(indexRows), "text/markdown");
       await saveJson("_index.json", indexRows);
     }
+    const savedIn = rootDir ? `${rootDir}/` : status.archived === 1 && lastFolder ? `${lastFolder}/` : "";
+    log(stopRequested ? (keepRecords ? "Stopped. Run again to resume." : "Stopped.") : `Done. Saved in Downloads/${savedIn}`);
     await writeStatus({ phase: stopRequested ? "stopped" : "done", current: null });
-    log(stopRequested ? "Stopped. Run again to resume." : "Done.");
   } catch (error) {
     status.errors.push({ fatal: true, error: error.message });
     log(`FATAL: ${error.message}`);
@@ -1406,6 +1454,7 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
 // shapes can be inspected from disk. "{org}" is replaced with the org ID.
 async function probe(paths) {
   rootDir = safeSegment(els.root.value || DEFAULT_ROOT, DEFAULT_ROOT);
+  keepRecords = true;
   const [org] = await listChatOrgs();
   const orgId = org.uuid || org.id;
   const summary = [];
@@ -1543,4 +1592,4 @@ if (params.get("probe")) {
   loadPicker();
 }
 // One-shot: a reload or a restored session must not start the run again.
-history.replaceState(null, "", `${location.pathname}?${new URLSearchParams({ root: els.root.value })}`);
+history.replaceState(null, "", location.pathname + (els.root.value ? `?${new URLSearchParams({ root: els.root.value })}` : ""));

@@ -41,6 +41,10 @@
         color: var(--muted);
         margin: 0 0 16px;
       }
+      p.hint {
+        margin: 6px 0 0;
+        font-size: 12px;
+      }
       label {
         display: block;
         font-weight: 600;
@@ -175,16 +179,21 @@
     <main>
       <h1>Claude backup</h1>
       <p>
-        Saves every chat into its own folder under Downloads: raw
+        Saves each chat as its own folder in Downloads: raw
         <code>conversation.json</code> (all branches), <code>transcript.md</code>,
         <code>thinking.md</code>, <code>pasted/</code>, <code>uploads/</code>,
         <code>outputs/</code>, <code>artifacts/</code> and a
-        <code>manifest.json</code> listing anything that failed. Re-running skips
-        chats that have not changed. Keep this tab open while it runs.
+        <code>manifest.json</code> listing anything that failed. Keep this tab open
+        while it runs.
       </p>
 
-      <label for="root">Folder inside Downloads</label>
-      <input type="text" id="root" value="Claude Full Archive" />
+      <label for="root">Folder inside Downloads (optional)</label>
+      <input type="text" id="root" placeholder="Claude Backup" />
+      <p class="hint">
+        Left empty, listed chats are saved straight into Downloads, and “Archive every chat” uses
+        <code>Claude Backup</code>. Re-running “Archive every chat” into the same folder skips chats
+        that have not changed.
+      </p>
 
       <label for="uuids">Only these chats (links or IDs, optional)</label>
       <textarea id="uuids" placeholder="https://claude.ai/chat/…"></textarea>
@@ -205,7 +214,7 @@
         <button type="button" class="primary" id="run-all">Archive every chat</button>
         <button type="button" id="run-some">Archive listed chats</button>
         <button type="button" id="stop" disabled>Stop</button>
-        <label class="check"><input type="checkbox" id="force" /> Redo chats already archived</label>
+        <label class="check"><input type="checkbox" id="force" /> Redo chats already in the folder</label>
       </div>
 
       <div class="bar"><div id="progress-fill"></div></div>

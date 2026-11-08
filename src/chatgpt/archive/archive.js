@@ -8,7 +8,7 @@ const STATE_KEY = 'cga:archive-state';
 const WORKER_KEY = 'cga:worker-tabs';
 // Bump when the archiver captures more: chats saved by an older revision are archived again.
 const ARCHIVE_REVISION = 2;
-const DEFAULT_ROOT = 'ChatGPT Full Archive';
+const DEFAULT_ROOT = 'ChatGPT Backup';
 const API_SYMBOL = 'chatgpt-attachment-downloader-archive-v1';
 const API_DELAY_MS = 1200;
 // ChatGPT allows a burst of ~200 conversation reads, then refills slowly: rest every 80 reads.
@@ -30,7 +30,11 @@ let stopRequested = false;
 let runActive = false; // this page's run is going (only then does it heartbeat and update the popup)
 const savedFileIds = new Set();
 let workerTabId = null;
+// rootDir '' = straight into Downloads. keepRecords: this run writes _status.json and the other
+// bookkeeping files, and remembers finished chats (all-chats runs, or a folder named on the page).
 let rootDir = DEFAULT_ROOT;
+let keepRecords = true;
+const inFolder = (folder, name) => (folder ? `${folder}/${name}` : name);
 let status = null;
 let requestCount = 0;
 let lastSavedBytes = null;
@@ -255,12 +259,18 @@ function waitForDownload(id, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
 async function finalRelativePath(id, requested) {
   const [item] = await chrome.downloads.search({ id });
   lastSavedBytes = Number.isFinite(item?.fileSize) && item.fileSize >= 0 ? item.fileSize : null;
+  if (!rootDir) {
+    // Straight into Downloads: keep the path from the requested top folder on.
+    const top = `/${requested.split('/')[0]}/`;
+    const at = item?.filename ? item.filename.lastIndexOf(top) : -1;
+    return at >= 0 ? item.filename.slice(at + 1) : requested;
+  }
   const marker = `/${rootDir}/`;
   const at = item?.filename ? item.filename.lastIndexOf(marker) : -1;
   return at >= 0 ? item.filename.slice(at + marker.length) : requested.slice(rootDir.length + 1);
 }
 async function saveFromUrl(relPath, url, size) {
-  let filename = `${rootDir}/${safePath(relPath)}`;
+  let filename = inFolder(rootDir, safePath(relPath));
   for (let attempt = 0; attempt < 2; attempt++) {
     const id = await withTimeout(chrome.downloads.download({ url, filename, conflictAction: 'overwrite', saveAs: false }),
       60000, `starting download of ${filename}`);
@@ -678,21 +688,21 @@ async function archiveAccount({ libraryPages = 400 } = {}) {
 
 // One project ("snorlax" gizmo): project.json (settings), instructions.md and its files.
 const projectFolder = project => `_projects/${safeSegment(project.name, project.id, 70)} [${project.id.slice(-8)}]`;
-async function archiveProject(project) {
-  const folder = projectFolder(project);
+// folder: where to save it ('' = the top of the run's folder).
+async function archiveProject(project, folder = projectFolder(project)) {
   const nameIn = makeNamer();
   let detail = project.raw || null;
   try { detail = await apiJson(`/backend-api/gizmos/${project.id}`); } catch (error) { if (!detail) log(`  project details unavailable (${error.code || error.message})`); }
-  await saveJson(`${folder}/project.json`, detail || { id: project.id, name: project.name });
+  await saveJson(inFolder(folder, 'project.json'), detail || { id: project.id, name: project.name });
   const gizmo = detail?.gizmo || detail;
   const instructions = gizmo?.instructions;
-  if (typeof instructions === 'string' && instructions.trim()) await saveText(`${folder}/instructions.md`, instructions, 'text/markdown');
+  if (typeof instructions === 'string' && instructions.trim()) await saveText(inFolder(folder, 'instructions.md'), instructions, 'text/markdown');
   let saved = 0, failed = 0;
   for (const file of detail?.files || gizmo?.files || []) {
     const id = fileIdOf(file.file_id || file.id);
     if (!id) continue;
     const result = await fetchFile({ conversationId: null, id, filename: file.name || id, expectedSize: file.size,
-      url: `/backend-api/files/download/${id}?gizmo_id=${encodeURIComponent(project.id)}` }, n => nameIn(`${folder}/files`, n));
+      url: `/backend-api/files/download/${id}?gizmo_id=${encodeURIComponent(project.id)}` }, n => nameIn(inFolder(folder, 'files'), n));
     if (result.ok) saved++; else { failed++; log(`  project file failed: ${file.name || id} (${result.error})`); }
   }
   log(`project: ${project.name} (${saved} files${failed ? `, ${failed} failed` : ''})`);
@@ -738,7 +748,7 @@ async function writeStatus(extra = {}) {
   statusWriting = (async () => {
     els['progress-fill'].style.width = `${status.total ? Math.round((100 * status.processed) / status.total) : 0}%`;
     els.summary.textContent = `${status.phase} · ${status.processed}/${status.total || '?'} chats · ${status.archived} archived, ${status.skipped} unchanged, ${status.failed} failed`;
-    try { await saveJson(status.mode === 'account' ? '_status-account.json' : '_status.json', status); } catch (error) { console.warn(LOG_PREFIX, 'status write failed', error); }
+    try { if (keepRecords) await saveJson(status.mode === 'account' ? '_status-account.json' : '_status.json', status); } catch (error) { console.warn(LOG_PREFIX, 'status write failed', error); }
     mirrorStatus();
   })();
   try { await statusWriting; } finally { statusWriting = null; }
@@ -761,6 +771,7 @@ function mirrorStatus() {
   chrome.storage.local.set({ 'backup-status:chatgpt': { ...rest, errors: errors.length, tabId: pageTabId, last_log: status.log.at(-1) || '' } }).catch(() => {});
 }
 async function loadState() {
+  if (!keepRecords) return { done: {} };
   const stored = (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || {};
   return stored[rootDir] || { done: {} };
 }
@@ -776,6 +787,7 @@ async function loadSeed() {
   }
 }
 async function saveState(state) {
+  if (!keepRecords) return;
   const stored = (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || {};
   // Merge rather than replace: another run into the same folder may have saved chats since this one started.
   const previous = stored[rootDir] || {};
@@ -798,15 +810,23 @@ function renderIndex(rows) {
 // project: a project (gizmo) ID — archive that project's chats and the project itself.
 async function run({ ids = null, force = false, redo = [], project = null }) {
   stopRequested = false;
-  rootDir = safeSegment(els.root.value || DEFAULT_ROOT, DEFAULT_ROOT);
   const mode = project ? 'project' : ids ? 'selected' : 'all';
+  // All chats: a folder in Downloads (ChatGPT Backup unless the field names another) that
+  // remembers what it has, so re-runs only fetch new chats. One chat, chosen chats and a
+  // project save straight into Downloads (a project into a folder named after it), always
+  // fresh and without bookkeeping files, unless the field names a folder.
+  const named = els.root.value.trim();
+  keepRecords = mode === 'all' || Boolean(named);
+  rootDir = keepRecords ? safeSegment(named || DEFAULT_ROOT, DEFAULT_ROOT) : '';
+  if (!keepRecords) force = true;
+  let lastFolder = null;
   projectCache = null; // fresh project list for each run
   status = { root: rootDir, mode, phase: 'starting', started_at: new Date().toISOString(), total: 0, processed: 0, archived: 0, skipped: 0, failed: 0, current: null, errors: [], log: [] };
   setRunning(true);
-  log(`Archiving into Downloads/${rootDir}/ ${project ? `(project ${project})` : ids ? `(${ids.length} selected chats)` : '(every chat)'}`);
+  log(`Saving into Downloads/${rootDir ? `${rootDir}/` : ''} ${project ? `(project ${project})` : ids ? `(${ids.length} selected chats)` : '(every chat)'}`);
   await writeStatus({ phase: 'listing' });
   const state = await loadState();
-  const seed = await loadSeed();
+  const seed = keepRecords ? await loadSeed() : null;
   if (seed?.root === rootDir && seed.done && typeof seed.done === 'object') {
     let added = 0;
     for (const [id, entry] of Object.entries(seed.done)) if (!state.done[id]) { state.done[id] = entry; added++; }
@@ -817,9 +837,19 @@ async function run({ ids = null, force = false, redo = [], project = null }) {
     let conversations;
     const prefetched = new Map();
     const projectIds = new Set();
+    const chatFolders = new Map(); // project ID → folders of its chats saved in this run
+    const noteFolder = (summary, folder) => {
+      if (summary.gizmo_id) chatFolders.set(summary.gizmo_id, [...(chatFolders.get(summary.gizmo_id) || []), folder]);
+    };
     if (project) {
       const info = await findProject(project);
       projectIds.add(info.id);
+      if (!rootDir) {
+        // Straight into Downloads: the project gets a folder named after it.
+        rootDir = `${safeSegment(info.name, info.id, 70)} [${info.id.slice(-8)}]`;
+        status.root = rootDir;
+        log(`Project folder: Downloads/${rootDir}/`);
+      }
       conversations = await listProjectConversations(info);
       log(`${conversations.length} chats in project ${info.name}`);
     } else if (ids) {
@@ -861,6 +891,7 @@ async function run({ ids = null, force = false, redo = [], project = null }) {
       if (!force && known && !redo.includes(summary.id) && known.rev === ARCHIVE_REVISION && toIso(known.update_time) === toIso(summary.update_time)) {
         row.stats = known.stats;
         for (const id of known.fileIds || []) savedFileIds.add(id);
+        noteFolder(summary, folder);
         status.skipped++;
       } else {
         try {
@@ -871,6 +902,8 @@ async function run({ ids = null, force = false, redo = [], project = null }) {
           const s = row.stats;
           log(`  ✓ ${s.messages} msgs · ${s.thinking} thinking · ${s.uploads} uploads · ${s.outputs} outputs · ${s.canvas} canvas${s.failed ? ` · ${s.failed} FAILED` : ''}`);
           state.done[summary.id] = { update_time: summary.update_time, folder, stats: s, fileIds: result.fileIds, rev: ARCHIVE_REVISION };
+          noteFolder(summary, folder);
+          lastFolder = folder;
           await saveState(state);
           status.archived++;
         } catch (error) {
@@ -889,8 +922,13 @@ async function run({ ids = null, force = false, redo = [], project = null }) {
     if ((ids || project) && projectIds.size && !stopRequested) {
       await writeStatus({ phase: 'projects' });
       for (const id of projectIds) {
-        try { await archiveProject(await findProject(id)); }
-        catch (error) { log(`project ${id} failed: ${error.message}`); status.errors.push({ project: id, error: error.message }); }
+        // Project mode: the run's folder is the project's folder. Chosen chats: a project/ folder
+        // inside each chat's folder, so one chat is one self-contained folder.
+        const targets = id === project ? [''] : (chatFolders.get(id) || []).map(folder => `${folder}/project`);
+        for (const folder of targets) {
+          try { await archiveProject(await findProject(id), folder); }
+          catch (error) { log(`project ${id} failed: ${error.message}`); status.errors.push({ project: id, error: error.message }); }
+        }
       }
     }
     if (!ids && !project && !stopRequested) {
@@ -899,8 +937,9 @@ async function run({ ids = null, force = false, redo = [], project = null }) {
       await saveText('_index.md', renderIndex(rows), 'text/markdown');
       await saveJson('_index.json', rows);
     }
+    const savedIn = rootDir ? `${rootDir}/` : status.archived === 1 && lastFolder ? `${lastFolder}/` : '';
+    log(stopRequested ? (keepRecords ? 'Stopped. Run again to resume.' : 'Stopped.') : `Done. Saved in Downloads/${savedIn}`);
     await writeStatus({ phase: stopRequested ? 'stopped' : 'done', current: null });
-    log(stopRequested ? 'Stopped. Run again to resume.' : 'Done.');
   } catch (error) {
     status.errors.push({ fatal: true, error: error.message });
     log(`FATAL: ${error.message}`);
@@ -914,6 +953,7 @@ async function run({ ids = null, force = false, redo = [], project = null }) {
 // Account-level data only (memories, instructions, settings, shared links, image library, projects).
 async function runAccount({ libraryPages }) {
   rootDir = safeSegment(els.root.value || DEFAULT_ROOT, DEFAULT_ROOT);
+  keepRecords = true;
   status = { root: rootDir, mode: 'account', phase: 'account', started_at: new Date().toISOString(), total: 0, processed: 0, archived: 0, skipped: 0, failed: 0, errors: [], log: [] };
   setRunning(true);
   try { await archiveAccount({ libraryPages }); await writeStatus({ phase: 'done' }); }
@@ -924,6 +964,7 @@ async function runAccount({ libraryPages }) {
 // Saves raw responses for a list of backend paths under _probe/, so API shapes can be inspected.
 async function probe(paths) {
   rootDir = safeSegment(els.root.value || DEFAULT_ROOT, DEFAULT_ROOT);
+  keepRecords = true;
   const summary = [];
   for (const [i, path] of paths.entries()) {
     const result = path.startsWith('raw:') ? await pageCall('inspectUrl', [path.slice(4)]) : await pageCall('json', [path]);
@@ -1027,4 +1068,4 @@ else if (params.get('auto') === '1') {
   loadPicker();
 }
 // One-shot: a reload or a restored session must not start the run again.
-history.replaceState(null, '', `${location.pathname}?${new URLSearchParams({ root: els.root.value })}`);
+history.replaceState(null, '', location.pathname + (els.root.value ? `?${new URLSearchParams({ root: els.root.value })}` : ''));

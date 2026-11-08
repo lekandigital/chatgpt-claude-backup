@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.1.0 — 2026-11-08: saves straight into Downloads
+
+- **Back up this chat** saves one folder straight into Downloads: `Downloads/2026-11-08 Chat title [a1b2c3d4]/`. If the chat is in a project, the project's instructions and files go inside it, in `project/`. Before, every backup went into `Downloads/Claude Full Archive/` or `Downloads/ChatGPT Full Archive/`, mixed in with earlier runs.
+- **Chosen chats** save straight into Downloads the same way, one folder each.
+- **Back up this project** saves one folder named after the project: the project's instructions, files and memory at the top, and one folder per chat.
+- These runs always save a fresh copy and leave no `_status.json` or other bookkeeping files in Downloads.
+- **Back up all chats** still uses a folder, now `Claude Backup` / `ChatGPT Backup`, so it can skip chats it already saved there. Type another folder name on the backup page to use an existing archive. A folder typed there also applies to chosen chats and projects (with the old bookkeeping files).
+- The popup no longer has a folder box. **Redo** appears when you confirm *Back up all chats*.
+- Fix: a single-chat Claude backup overwrote the folder's `_conversations.json` (the full run's chat list).
+
 ## 3.0.0 — 2026-11-08: ChatGPT + Claude Backup
 
 The repository is renamed from **claude-export-hub** to **chatgpt-claude-backup**, and the extension now covers both sites.

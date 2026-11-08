@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT + Claude Backup",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Back up ChatGPT and Claude chats — one chat, chosen chats or all of them — with thinking, pasted text, uploads, generated files, projects and branches.",
   "minimum_chrome_version": "111",
   "permissions": [

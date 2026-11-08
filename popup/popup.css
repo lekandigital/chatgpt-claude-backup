@@ -133,19 +133,9 @@ button {
   color: var(--warn-fg);
   font-size: 12px;
 }
-.field {
-  display: block;
-  margin: 4px 0 4px;
-  font-weight: 600;
-}
-input[type="text"] {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
-  font: inherit;
+.note {
+  margin: 0;
+  font-size: 12px;
 }
 .check {
   display: flex;
