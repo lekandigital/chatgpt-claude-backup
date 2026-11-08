@@ -40,6 +40,7 @@ const els = {
 };
 
 let stopRequested = false;
+let runActive = false; // this page's run is going (only then does it heartbeat and update the popup)
 let workerTabId = null;
 let ownsWorkerTab = false;
 let rootDir = DEFAULT_ROOT;
@@ -79,7 +80,7 @@ function log(message) {
   lines.push(line);
   els.log.textContent = lines.join("\n");
   els.log.scrollTop = els.log.scrollHeight;
-  if (status) {
+  if (status && runActive) {
     status.log.push(line);
     if (status.log.length > 60) status.log.shift();
     scheduleHeartbeat();
@@ -1158,7 +1159,14 @@ async function loadState() {
 
 async function saveState(state) {
   const stored = (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || {};
-  stored[rootDir] = state;
+  // Merge rather than replace: another run into the same folder may have saved chats since this one started.
+  const previous = stored[rootDir] || {};
+  const merged = { ...previous, ...state };
+  for (const [key, value] of Object.entries(state)) {
+    const old = previous[key];
+    if (value && old && typeof value === "object" && typeof old === "object" && !Array.isArray(value)) merged[key] = { ...old, ...value };
+  }
+  stored[rootDir] = merged;
   await chrome.storage.local.set({ [STATE_KEY]: stored });
 }
 
@@ -1199,10 +1207,17 @@ async function writeStatusNow() {
 
 // The toolbar popup shows the latest run from here (it cannot read Downloads).
 let pageTabId = null;
-chrome.tabs.getCurrent().then((tab) => {
+chrome.tabs.getCurrent().then(async (tab) => {
   pageTabId = tab?.id ?? null;
+  // A reload of this tab mid-run ends that run: don't leave the popup saying it is still going.
+  const key = "backup-status:claude";
+  const last = (await chrome.storage.local.get(key))[key];
+  if (last && last.tabId === pageTabId && !runActive && !["done", "stopped", "error", "interrupted"].includes(last.phase)) {
+    await chrome.storage.local.set({ [key]: { ...last, phase: "interrupted" } });
+  }
 });
 function mirrorStatus() {
+  if (!runActive) return;
   const { log: _log, errors, ...rest } = status;
   chrome.storage.local
     .set({ "backup-status:claude": { ...rest, errors: errors.length, tabId: pageTabId, last_log: status.log.at(-1) || "" } })
@@ -1254,6 +1269,7 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
       const orgId = org.uuid || org.id;
       const prefix = orgs.length > 1 ? `${safeSegment(org.name, orgId)}/` : "";
       let conversations = await listConversations(orgId);
+      let projectInOrg = false;
       log(`${org.name || orgId}: ${conversations.length} chats listed`);
       await saveJson(`${prefix}_conversations.json`, conversations);
       // Some chats (e.g. untitled ones from other surfaces) never appear in
@@ -1277,7 +1293,13 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
       if (uuids) conversations = conversations.filter((c) => uuids.includes(c.uuid) || extra.includes(c.uuid));
       if (project) {
         // The project's own chat list catches chats the account lists missed.
-        const own = await apiJson(`/api/organizations/${orgId}/projects/${project}/conversations`, 2).catch(() => []);
+        let ownsProject = true;
+        const own = await apiJson(`/api/organizations/${orgId}/projects/${project}/conversations`, 2).catch(() => {
+          ownsProject = false;
+          return [];
+        });
+        if (!ownsProject && orgs.length === 1) ownsProject = true; // single organization: still try the project itself
+        projectInOrg = ownsProject;
         const have = new Set(conversations.map((c) => c.uuid));
         for (const c of Array.isArray(own) ? own : own.data || []) if (c?.uuid && !have.has(c.uuid)) conversations.push({ ...c, project_uuid: project });
         conversations = conversations.filter((c) => projectUuidOf(c) === project);
@@ -1285,7 +1307,7 @@ async function run({ uuids = null, extra = [], force = false, includeProjects = 
       if (project) log(`${conversations.length} chats in project ${conversations.find((c) => c.project?.name)?.project.name || project}`);
       // Projects of the selected chats are saved too (instructions, docs, files).
       const projectSet = new Set(selecting ? conversations.map(projectUuidOf).filter(Boolean) : []);
-      if (project) projectSet.add(project);
+      if (project && (projectInOrg || conversations.length)) projectSet.add(project);
       status.total += conversations.length;
       await writeStatus({ phase: "archiving" });
       const folderByConv = new Map();
@@ -1406,6 +1428,7 @@ async function probe(paths) {
 }
 
 function setRunning(running) {
+  runActive = running;
   els.runAll.disabled = running;
   els.runSome.disabled = running;
   els.loadList.disabled = running;
@@ -1429,7 +1452,11 @@ const UUID_ONE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g
 let pickerChats = [];
 const pickedIds = () => new Set((els.uuids.value.match(UUID_ONE) || []).map((id) => id.toLowerCase()));
 function setPicked(id, on) {
-  const lines = els.uuids.value.split("\n").map((l) => l.trim()).filter(Boolean).filter((l) => !l.toLowerCase().includes(id));
+  // Remove just this chat (a line can hold several pasted IDs); drop lines left without any ID.
+  const lines = els.uuids.value
+    .split("\n")
+    .map((line) => (line.toLowerCase().includes(id) ? line.replace(new RegExp(`\\S*${id}\\S*`, "gi"), "").replace(/^[\s,;]+|[\s,;]+$/g, "") : line.trim()))
+    .filter((line) => line && (line.match(UUID_ONE) || !/[0-9a-f]{8}-/i.test(line)));
   if (on) lines.push(`https://claude.ai/chat/${id}`);
   els.uuids.value = lines.join("\n");
   els.pickedCount.textContent = `${pickedIds().size} chosen`;
@@ -1457,7 +1484,8 @@ function renderPicker() {
   els.pickedCount.textContent = `${picked.size} chosen · ${shown.length} shown${shown.length > 1500 ? " (first 1500 listed)" : ""}`;
 }
 async function loadPicker() {
-  els.loadList.disabled = true;
+  if (runActive) return;
+  els.loadList.disabled = els.runAll.disabled = els.runSome.disabled = true;
   els.loadList.textContent = "Loading…";
   try {
     log("Loading the chat list…");
@@ -1469,11 +1497,13 @@ async function loadPicker() {
   } catch (error) {
     log(`Could not load the chat list: ${error.message}`);
   } finally {
-    els.loadList.disabled = false;
     els.loadList.textContent = "Reload list";
-    if (ownsWorkerTab && workerTabId !== null) {
-      chrome.tabs.remove(workerTabId).catch(() => {});
-      workerTabId = null;
+    if (!runActive) {
+      els.loadList.disabled = els.runAll.disabled = els.runSome.disabled = false;
+      if (ownsWorkerTab && workerTabId !== null) {
+        chrome.tabs.remove(workerTabId).catch(() => {});
+        workerTabId = null;
+      }
     }
   }
 }
@@ -1512,3 +1542,5 @@ if (params.get("probe")) {
   els.picker.open = true;
   loadPicker();
 }
+// One-shot: a reload or a restored session must not start the run again.
+history.replaceState(null, "", `${location.pathname}?${new URLSearchParams({ root: els.root.value })}`);

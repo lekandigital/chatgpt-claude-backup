@@ -27,6 +27,7 @@ const els = Object.fromEntries(['root', 'ids', 'force', 'run-all', 'run-some', '
   .map(id => [id, document.getElementById(id)]));
 
 let stopRequested = false;
+let runActive = false; // this page's run is going (only then does it heartbeat and update the popup)
 const savedFileIds = new Set();
 let workerTabId = null;
 let rootDir = DEFAULT_ROOT;
@@ -64,7 +65,7 @@ function log(message) {
   lines.push(line);
   els.log.textContent = lines.join('\n');
   els.log.scrollTop = els.log.scrollHeight;
-  if (status) {
+  if (status && runActive) {
     status.log.push(line);
     if (status.log.length > 60) status.log.shift();
     scheduleHeartbeat();
@@ -711,7 +712,11 @@ async function listProjectConversations(project) {
   return chats.sort((a, b) => toIso(b.update_time).localeCompare(toIso(a.update_time)));
 }
 async function findProject(id) {
-  const projects = await listProjects().catch(() => []);
+  const projects = await listProjects().catch(error => {
+    log(`project list unavailable (${error.code || error.message}); using the project ID as its name`);
+    projectCache = []; // don't retry for every chat in this run
+    return [];
+  });
   return projects.find(p => p.id === id) || { id, name: id };
 }
 const PROJECT_ID = /g-p-[0-9a-f]{32}/i;
@@ -741,8 +746,17 @@ async function writeStatus(extra = {}) {
 }
 // The toolbar popup shows the latest run from here (it cannot read Downloads).
 let pageTabId = null;
-chrome.tabs.getCurrent().then(tab => { pageTabId = tab?.id ?? null; });
+chrome.tabs.getCurrent().then(async tab => {
+  pageTabId = tab?.id ?? null;
+  // A reload of this tab mid-run ends that run: don't leave the popup saying it is still going.
+  const key = 'backup-status:chatgpt';
+  const last = (await chrome.storage.local.get(key))[key];
+  if (last && last.tabId === pageTabId && !runActive && !['done', 'stopped', 'error', 'interrupted'].includes(last.phase)) {
+    await chrome.storage.local.set({ [key]: { ...last, phase: 'interrupted' } });
+  }
+});
 function mirrorStatus() {
+  if (!runActive) return;
   const { log: _log, errors, ...rest } = status;
   chrome.storage.local.set({ 'backup-status:chatgpt': { ...rest, errors: errors.length, tabId: pageTabId, last_log: status.log.at(-1) || '' } }).catch(() => {});
 }
@@ -763,7 +777,9 @@ async function loadSeed() {
 }
 async function saveState(state) {
   const stored = (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || {};
-  stored[rootDir] = state;
+  // Merge rather than replace: another run into the same folder may have saved chats since this one started.
+  const previous = stored[rootDir] || {};
+  stored[rootDir] = { ...previous, ...state, done: { ...(previous.done || {}), ...(state.done || {}) } };
   await chrome.storage.local.set({ [STATE_KEY]: stored });
 }
 function renderIndex(rows) {
@@ -784,6 +800,7 @@ async function run({ ids = null, force = false, redo = [], project = null }) {
   stopRequested = false;
   rootDir = safeSegment(els.root.value || DEFAULT_ROOT, DEFAULT_ROOT);
   const mode = project ? 'project' : ids ? 'selected' : 'all';
+  projectCache = null; // fresh project list for each run
   status = { root: rootDir, mode, phase: 'starting', started_at: new Date().toISOString(), total: 0, processed: 0, archived: 0, skipped: 0, failed: 0, current: null, errors: [], log: [] };
   setRunning(true);
   log(`Archiving into Downloads/${rootDir}/ ${project ? `(project ${project})` : ids ? `(${ids.length} selected chats)` : '(every chat)'}`);
@@ -921,12 +938,13 @@ async function probe(paths) {
 }
 
 function setRunning(running) {
+  runActive = running;
   els['run-all'].disabled = running;
   els['run-some'].disabled = running;
   els['load-list'].disabled = running;
   els.stop.disabled = !running;
 }
-const idsFrom = text => [...new Set(String(text || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || [])];
+const idsFrom = text => [...new Set((String(text || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi) || []).map(id => id.toLowerCase()))];
 els['run-all'].addEventListener('click', () => run({ force: els.force.checked }));
 els['run-some'].addEventListener('click', () => {
   const ids = idsFrom(els.ids.value);
@@ -940,7 +958,10 @@ els.stop.addEventListener('click', () => { stopRequested = true; log('Stopping a
 let pickerChats = [];
 function pickedIds() { return new Set(idsFrom(els.ids.value)); }
 function setPicked(id, on) {
-  const lines = els.ids.value.split('\n').map(l => l.trim()).filter(Boolean).filter(l => !l.includes(id));
+  // Remove just this chat (a line can hold several pasted IDs); drop lines left without any ID.
+  const lines = els.ids.value.split('\n')
+    .map(line => line.toLowerCase().includes(id) ? line.replace(new RegExp(`\\S*${id}\\S*`, 'gi'), '').replace(/^[\s,;]+|[\s,;]+$/g, '') : line.trim())
+    .filter(line => line && (idsFrom(line).length || !/[0-9a-f]{8}-/i.test(line)));
   if (on) lines.push(`https://chatgpt.com/c/${id}`);
   els.ids.value = lines.join('\n');
   els['picked-count'].textContent = `${pickedIds().size} chosen`;
@@ -964,7 +985,8 @@ function renderPicker() {
   els['picked-count'].textContent = `${picked.size} chosen · ${shown.length} shown${shown.length > 1500 ? ' (first 1500 listed)' : ''}`;
 }
 async function loadPicker() {
-  els['load-list'].disabled = true;
+  if (runActive) return;
+  els['load-list'].disabled = els['run-all'].disabled = els['run-some'].disabled = true;
   els['load-list'].textContent = 'Loading…';
   try {
     log('Loading the chat list…');
@@ -974,8 +996,11 @@ async function loadPicker() {
   } catch (error) {
     log(`Could not load the chat list: ${error.message}`);
   } finally {
-    els['load-list'].disabled = false;
     els['load-list'].textContent = 'Reload list';
+    if (!runActive) {
+      els['load-list'].disabled = els['run-all'].disabled = els['run-some'].disabled = false;
+      closeWorkerTab();
+    }
   }
 }
 els['load-list'].addEventListener('click', loadPicker);
@@ -1001,3 +1026,5 @@ else if (params.get('auto') === '1') {
   document.getElementById('picker').open = true;
   loadPicker();
 }
+// One-shot: a reload or a restored session must not start the run again.
+history.replaceState(null, '', `${location.pathname}?${new URLSearchParams({ root: els.root.value })}`);

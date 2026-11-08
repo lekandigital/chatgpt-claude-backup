@@ -33,7 +33,9 @@ chrome.runtime.onMessage.addListener((request, sender) => {
   (async () => {
     const token = await readAutomationTokenFile();
     const params = request.params || {};
-    if (token.length < 16 || params.token !== token) {
+    // automation.js sends `token`; content scripts from before a reload send the prefix key.
+    const given = params.token || params.ccb || params.ceh || params.cga;
+    if (token.length < 16 || given !== token) {
       console.warn("[ChatGPT + Claude Backup] Ignored automation command with a bad token");
       return;
     }

@@ -9,8 +9,8 @@
   const match = /^#(ccb|ceh|cga)=/.exec(location.hash);
   if (!match) return;
   const params = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+  // Keep the prefix key too: a worker from before the reload may still check it.
   params.token = params[match[1]];
-  delete params[match[1]];
   history.replaceState(null, "", location.pathname + location.search);
   chrome.runtime.sendMessage({ action: "automationCommand", params }).catch(() => {});
 })();

@@ -15,7 +15,7 @@ const SITES = {
     cleanTitle: (title) => title.replace(/\s+[-–]\s+Claude$/, "").trim(),
     more: { label: "ZIP export (older modes)", page: "../claude/zip-export.html" },
     allWarning:
-      "Saves every chat, then your projects and account files, into the folder. Chats already saved there and unchanged are skipped. Keep the tab that opens until it says Done.",
+      "Saves every chat, then your projects and account files, into the folder. Chats this extension already saved there and unchanged are skipped (tick Redo if you deleted or moved the folder). Keep the tab that opens until it says Done.",
   },
   chatgpt: {
     name: "ChatGPT",
@@ -28,10 +28,10 @@ const SITES = {
     cleanTitle: (title) => title.replace(/^ChatGPT\s+[-–]\s+/, "").trim(),
     more: { label: "Attachments & transcript", page: "../chatgpt/popup/popup.html" },
     allWarning:
-      "ChatGPT allows about one chat read a minute after the first ~200, so a large account takes many hours and your own ChatGPT use may be rate-limited meanwhile. Chats already saved in the folder and unchanged are skipped. Keep the tab that opens.",
+      "ChatGPT allows about one chat read a minute after the first ~200, so a large account takes many hours and your own ChatGPT use may be rate-limited meanwhile. Chats this extension already saved in the folder and unchanged are skipped (tick Redo if you deleted or moved the folder). Keep the tab that opens.",
   },
 };
-const TERMINAL = new Set(["done", "stopped", "error"]);
+const TERMINAL = new Set(["done", "stopped", "error", "interrupted"]);
 const $ = (id) => document.getElementById(id);
 
 let site = "claude";
@@ -155,9 +155,15 @@ async function renderStatus() {
   render();
 }
 
-function openBackupPage(query, active) {
+async function openBackupPage(query, active) {
   const params = new URLSearchParams({ root: saveRoot(), ...query });
-  return chrome.tabs.create({ url: chrome.runtime.getURL(`${SITES[site].page}?${params}`), active });
+  const created = await chrome.tabs.create({ url: chrome.runtime.getURL(`${SITES[site].page}?${params}`), active });
+  // Block a second start (double click) until the new page reports in.
+  if (query.auto === "1") {
+    running = true;
+    render();
+  }
+  return created;
 }
 
 function force() {
