@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatGPT Attachment Downloader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <a class="back-link" href="../../popup/popup.html?site=chatgpt">← Backup</a>
+  <header>
+    <div class="app-icon" aria-hidden="true">↓</div>
+    <div><h1>ChatGPT Attachment<br>Downloader</h1><p class="eyebrow">Your files. One place.</p></div>
+    <span id="version" class="version"></span>
+  </header>
+  <main>
+    <section class="context" aria-label="Current conversation">
+      <div class="context-top"><span class="label">CURRENT CONVERSATION</span><span id="auth" class="pill">Connecting…</span></div>
+      <p id="conversation" class="conversation">Connecting to your tab…</p>
+      <span id="conversation-id" class="muted"></span>
+    </section>
+    <p id="connection-note" class="note" role="status"></p>
+    <button id="reload" class="secondary full" hidden>Reload page to capture authentication</button>
+    <section id="notice" class="notice" hidden>
+      <p>Chrome may ask whether this site can download multiple files. Choose <strong>Allow</strong> to continue the batch.</p>
+      <button id="acknowledge" class="text-button">Got it</button>
+    </section>
+    <div class="actions primary-actions">
+      <button id="scan" class="secondary" disabled>Scan attachments</button>
+      <button id="download-all" class="primary" disabled>Download all</button>
+      <button id="stop" class="danger" hidden>Stop</button>
+    </div>
+    <section class="transcript" aria-labelledby="transcript-label">
+      <div class="transcript-row">
+        <span id="transcript-label" class="label">TRANSCRIPT</span>
+        <span class="transcript-buttons">
+          <button id="transcript-md" class="text-button" disabled>Save Markdown</button>
+          <button id="transcript-json" class="text-button" disabled>Save JSON</button>
+        </span>
+      </div>
+      <label class="check"><input id="include-transcript" type="checkbox" checked> Include the Markdown transcript with Download all</label>
+      <p id="transcript-status" class="muted" role="status"></p>
+    </section>
+    <section id="progress-section" aria-label="Download progress" hidden>
+      <div class="progress-heading"><strong id="phase">Ready</strong><span id="progress-count">0 / 0</span></div>
+      <progress id="progress" value="0" max="1" aria-label="Files processed"></progress>
+      <p id="totals" class="muted"></p>
+      <p id="active-file" class="active-file"></p>
+      <p id="countdown" class="note" aria-live="polite"></p>
+    </section>
+    <p id="error" class="error" role="alert" hidden></p>
+    <p id="partial" class="note" hidden>The API returned a partial list. Additional attachments may exist.</p>
+    <p id="large-file" class="note" hidden>This file exceeds 250 MB and may use substantial browser memory.</p>
+    <section id="attachments" hidden>
+      <div class="list-heading"><h2>Attachments <span id="file-count"></span></h2><span id="selected-count" class="muted"></span></div>
+      <label class="sr-only" for="search">Filter attachments by filename</label>
+      <input id="search" type="search" placeholder="Find a file…" autocomplete="off">
+      <div id="type-filters" class="type-filters" role="group" aria-label="Filter by file type">
+        <button class="chip" data-type="all" aria-pressed="true">All</button>
+        <button class="chip" data-type="pdf" aria-pressed="false">PDF</button>
+        <button class="chip" data-type="image" aria-pressed="false">Images</button>
+        <button class="chip" data-type="document" aria-pressed="false">Documents</button>
+        <button class="chip" data-type="text" aria-pressed="false">Text</button>
+        <button class="chip" data-type="other" aria-pressed="false">Other</button>
+      </div>
+      <div class="selection-actions">
+        <button id="select-all" class="text-button">Select all</button>
+        <button id="select-none" class="text-button">Select none</button>
+        <button id="select-failed" class="text-button">Select failed</button>
+        <button id="clear-completed" class="text-button">Hide completed</button>
+      </div>
+      <div id="file-list" class="file-list" aria-label="Attachments"></div>
+      <p id="empty-list" class="empty" hidden>No attachments found in this conversation.</p>
+      <div class="actions"><button id="download-selected" class="primary" disabled>Download selected</button><button id="resume" class="secondary" disabled>Resume</button></div>
+      <button id="retry-failed" class="text-button full" disabled>Retry failed</button>
+    </section>
+    <button id="open-archive" class="text-button full">Full archive: every chat, thinking and file, one folder per chat →</button>
+    <p id="handoff-note" class="footnote" hidden>“Downloaded” means handed to Chrome. Check Chrome’s Downloads for disk completion. Keep the ChatGPT tab open.</p>
+    <details id="diagnostics">
+      <summary>Details &amp; privacy</summary>
+      <p class="muted">Credentials stay in page memory. No analytics or uploads. Filenames and progress are saved locally for the last eight conversations you scan.</p>
+      <div id="log" class="log" aria-label="Diagnostic log"></div>
+      <div class="actions"><button id="export-list" class="secondary">Export file list</button><button id="export" class="secondary">Export diagnostics</button><button id="forget" class="secondary">Forget history</button></div>
+      <p id="privacy-result" class="muted" role="status"></p>
+    </details>
+  </main>
+  <footer><span class="privacy-dot" aria-hidden="true"></span>Local processing · No telemetry</footer>
+  <script src="popup.js"></script>
+</body>
+</html>

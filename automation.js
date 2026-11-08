@@ -1,11 +1,16 @@
-// automation.js — lets a local script drive the extension by opening
-//   https://claude.ai/#ceh=<token>&cmd=archive&uuids=a,b&root=…
-//   https://claude.ai/#ceh=<token>&cmd=reload
-// The token must match automation-token.txt in the extension folder (checked
-// in background.js), so web pages cannot trigger anything.
+// automation.js — lets a local script drive the extension by opening a link such as
+//   https://claude.ai/#ccb=<token>&cmd=archive&site=claude&uuids=a,b&root=…
+//   https://chatgpt.com/#ccb=<token>&cmd=archive&ids=a,b&root=…
+//   https://claude.ai/#ccb=<token>&cmd=reload
+// The older prefixes still work: #ceh= (Claude Export Hub) and #cga= (ChatGPT downloader).
+// The token must match automation-token.txt in the extension folder (checked in background.js),
+// so web pages cannot trigger anything.
 (() => {
-  if (!location.hash.startsWith("#ceh=")) return;
+  const match = /^#(ccb|ceh|cga)=/.exec(location.hash);
+  if (!match) return;
   const params = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+  params.token = params[match[1]];
+  delete params[match[1]];
   history.replaceState(null, "", location.pathname + location.search);
-  chrome.runtime.sendMessage({ action: "automationCommand", params });
+  chrome.runtime.sendMessage({ action: "automationCommand", params }).catch(() => {});
 })();

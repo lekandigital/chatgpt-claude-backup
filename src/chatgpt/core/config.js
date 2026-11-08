@@ -1,0 +1,20 @@
+const Config = Object.freeze({
+  ORIGIN: 'https://chatgpt.com',
+  NAMESPACE: 'CHATGPT_ATTACHMENT_DOWNLOADER_V1',
+  VERSION: '3.0.0',
+  FILE_LIST_LIMIT: 200,
+  MAX_FILES: 5000,
+  MAX_PAGES: 50,
+  FILE_DELAY_MS: 1500,
+  MAX_METADATA_HOPS: 4,
+  MAX_RATE_RETRIES: 4,
+  MAX_SERVER_RETRIES: 3,
+  MAX_NETWORK_RETRIES: 2,
+  // A request fails only after this long without any response bytes, so large files are not cut off.
+  STALL_TIMEOUT_MS: 90000,
+  MAX_METADATA_BYTES: 1024 * 1024,
+  LARGE_FILE_BYTES: 250 * 1024 * 1024,
+  BLOB_LIFETIME_MS: 30000,
+  PROGRESS_PUBLISH_MS: 400,
+  HISTORY_LIMIT: 8,
+});

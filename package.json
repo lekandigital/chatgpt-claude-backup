@@ -1,15 +1,21 @@
 {
-  "name": "claude-export-hub",
-  "version": "2.0.0",
+  "name": "chatgpt-claude-backup",
+  "version": "3.0.0",
   "private": true,
-  "description": "Chrome extension for exporting Claude.ai conversations",
+  "description": "Chrome extension that backs up ChatGPT and Claude chats (one, chosen or all) with thinking, pasted text, uploads, generated files, projects and branches.",
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "test:fixtures": "node --test test/fixtures.test.js",
-    "test:browser": "node scripts/chrome-smoke.js",
-    "test:integration": "node --test test/integration.test.js"
+    "build": "node scripts/chatgpt/build.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "npm run test:claude && npm run test:chatgpt",
+    "test:claude": "node --test test/claude/export-core.test.js test/claude/attachment-metadata.test.js test/claude/integration.test.js",
+    "test:claude:fixtures": "node --test test/claude/fixtures.test.js",
+    "test:chatgpt": "node --test test/chatgpt/*.test.mjs",
+    "test:chatgpt:browser": "node test/chatgpt/browser.mjs",
+    "test:claude:browser": "node scripts/claude/chrome-smoke.js"
   },
+  "engines": { "node": ">=20" },
   "devDependencies": {
-    "jsdom": "^26.1.0"
+    "jsdom": "^26.1.0",
+    "playwright": "1.62.1"
   }
 }

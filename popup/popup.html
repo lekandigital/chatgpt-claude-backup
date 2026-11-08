@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ChatGPT + Claude Backup</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="../icons/icon32.png" alt="" width="24" height="24" />
+      <h1>ChatGPT + Claude Backup</h1>
+      <span id="version" class="muted"></span>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Site">
+      <button type="button" role="tab" id="tab-claude" data-site="claude" aria-selected="false">Claude</button>
+      <button type="button" role="tab" id="tab-chatgpt" data-site="chatgpt" aria-selected="false">ChatGPT</button>
+    </div>
+
+    <main>
+      <section class="context" aria-live="polite">
+        <span class="label">CURRENT PAGE</span>
+        <p id="context-title">—</p>
+        <p id="context-note" class="muted"></p>
+      </section>
+
+      <div class="actions">
+        <button type="button" id="this-chat" class="primary">Back up this chat</button>
+        <button type="button" id="this-project" hidden>Back up this project</button>
+        <button type="button" id="choose">Choose chats…</button>
+        <button type="button" id="all">Back up all chats</button>
+        <p id="all-warning" class="warning" hidden></p>
+      </div>
+
+      <label class="field" for="root">Folder inside Downloads</label>
+      <input type="text" id="root" spellcheck="false" />
+      <label class="check"><input type="checkbox" id="force" /> Redo chats already saved in this folder</label>
+
+      <section id="status" class="status" hidden>
+        <div class="status-top">
+          <span class="label">LAST BACKUP</span>
+          <button type="button" id="show-run" class="link">Show</button>
+        </div>
+        <div class="bar"><div id="status-fill"></div></div>
+        <p id="status-line"></p>
+        <p id="status-log" class="muted"></p>
+      </section>
+    </main>
+
+    <footer>
+      <button type="button" id="open-page" class="link">Backup page</button>
+      <span aria-hidden="true">·</span>
+      <button type="button" id="more-tool" class="link"></button>
+    </footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

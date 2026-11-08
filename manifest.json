@@ -1,10 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Claude Export Hub",
-  "version": "2.1",
-  "description": "Export Claude chats, transcripts, artifacts, pasted content, and optional visible thinking as organized ZIP archives",
+  "name": "ChatGPT + Claude Backup",
+  "version": "3.0.0",
+  "description": "Back up ChatGPT and Claude chats — one chat, chosen chats or all of them — with thinking, pasted text, uploads, generated files, projects and branches.",
+  "minimum_chrome_version": "111",
   "permissions": [
     "tabs",
+    "activeTab",
     "downloads",
     "storage",
     "webRequest",
@@ -14,7 +16,8 @@
   ],
   "host_permissions": [
     "https://claude.ai/*",
-    "https://api.claude.ai/*"
+    "https://api.claude.ai/*",
+    "https://chatgpt.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -22,34 +25,45 @@
   "content_scripts": [
     {
       "run_at": "document_end",
-      "matches": [
-        "https://claude.ai/*"
-      ],
-      "js": [
-        "banner.js",
-        "lib/export-core.js",
-        "content.js"
-      ]
+      "matches": ["https://claude.ai/*"],
+      "js": ["claude/banner.js", "claude/lib/export-core.js", "claude/content.js"]
     },
     {
       "run_at": "document_start",
-      "matches": [
-        "https://claude.ai/*"
-      ],
-      "js": [
-        "automation.js"
-      ]
+      "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
+      "js": ["automation.js"]
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["chatgpt/main-world.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["chatgpt/content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
     }
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Claude Export Hub",
+    "default_popup": "popup/popup.html",
+    "default_title": "ChatGPT + Claude Backup",
     "default_icon": {
-      "48": "icon48.png"
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
     }
   },
   "icons": {
-    "48": "icon48.png",
-    "128": "icon128.png"
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"
   }
 }

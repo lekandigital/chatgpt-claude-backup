@@ -1,4 +1,12 @@
 node_modules/
-automation-token.txt
-archive-hints.json
+test-results/
 __pycache__/
+*.zip
+.DS_Store
+# Local-only files read by the extension (never commit: tokens and personal chat maps)
+automation-token.txt
+claude/archive-hints.json
+chatgpt/archive-hints.json
+chatgpt/archive-state.json
+# Old temporary host for the ChatGPT archiver (superseded by chatgpt/)
+chatgpt-archive/
