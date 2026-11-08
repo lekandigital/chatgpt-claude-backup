@@ -1,5 +1,5 @@
 /**
- * Shared export logic for Claude Export Hub (browser + Node tests).
+ * Shared Claude export logic for ChatGPT + Claude Backup (browser + Node tests).
  */
 (function (root, factory) {
   const api = factory();
@@ -8,7 +8,7 @@
   }
   root.CadExportCore = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const LOG_PREFIX = "[Claude Export Hub]";
+  const LOG_PREFIX = "[ChatGPT + Claude Backup][claude]";
 
   function elementText(el) {
     if (!el) {

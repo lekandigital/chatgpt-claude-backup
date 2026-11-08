@@ -2,7 +2,7 @@
 """Build archive-hints.json from Claude's official data export.
 
 The official export (Settings → Privacy → Export data) lists every chat,
-file and project in the account, but only names the files. The Full archive
+file and project in the account, but only names the files. The Claude backup
 page reads archive-hints.json from the extension folder and uses it as a map:
 it fetches chats the list endpoints hide (incognito chats), tries every file
 ID through /files/{id}/contents, and opens projects by ID.

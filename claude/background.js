@@ -29,7 +29,7 @@ function sanitizeFilename(name) {
   return sanitized || "claude-artifacts";
 }
 
-const LOG_PREFIX = "[Claude Export Hub]";
+const LOG_PREFIX = "[ChatGPT + Claude Backup][claude]";
 const CHAT_URL_PATTERN = /^https:\/\/claude\.ai\/chat\/[^/]+/;
 const CLAUDE_URL_PATTERN = /^https:\/\/claude\.ai/;
 const ORG_API_URLS = [

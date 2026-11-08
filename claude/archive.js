@@ -1,4 +1,5 @@
-// archive.js — "Full archive" mode for Claude Export Hub.
+// archive.js — the Claude backup page of ChatGPT + Claude Backup. One chat, chosen chats and
+// projects save straight into Downloads; "all chats" saves into a folder (default Claude Backup).
 //
 // Runs in its own extension tab (archive.html) so a long export is not at the
 // mercy of service-worker suspension. Every claude.ai API call is made from a

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent completeness check for a ChatGPT Full archive folder.
+"""Independent completeness check for a ChatGPT backup folder.
 
 For every chat folder it re-reads the raw conversation.json and checks, without using the
 extension's code, that:
@@ -14,7 +14,7 @@ extension's code, that:
     verified against ChatGPT's own size, matches the attachment's recorded size; files saved
     in another chat folder count as saved
 
-    python3 -I scripts/chatgpt/verify-archive.py "<ChatGPT Full Archive>" [--samples]
+    python3 -I scripts/chatgpt/verify-archive.py "<Downloads/ChatGPT Backup>" [--samples]
 """
 import collections
 import glob

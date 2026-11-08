@@ -1,4 +1,4 @@
-// Installed into a chatgpt.com tab's MAIN world by the Full archive page (chrome.scripting).
+// Installed into a chatgpt.com tab's MAIN world by the ChatGPT backup page (chrome.scripting).
 // Authentication comes from /api/auth/session — the same bearer token ChatGPT's own requests
 // carry — and stays in this page together with signed URLs. The archive page only receives
 // parsed JSON and file bytes, in chunks, through the frozen API below.

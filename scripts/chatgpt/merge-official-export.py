@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Fold ChatGPT's official data export into a Full archive folder.
+"""Fold ChatGPT's official data export into a ChatGPT backup folder.
 
-Run after the Full archive has finished:
+Run after a Back up all chats run has finished:
 
-    python3 -I scripts/chatgpt/merge-official-export.py "<ChatGPT Full Archive>" <export.zip> [--dry-run]
+    python3 -I scripts/chatgpt/merge-official-export.py "<Downloads/ChatGPT Backup>" <export.zip> [--dry-run]
 
 The live archive is richer than the export (widget Markdown, dictation pointers, citations,
 reasoning times), so it stays the primary copy. The export fills what the live API can no

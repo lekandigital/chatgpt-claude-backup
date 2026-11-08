@@ -1,4 +1,4 @@
-const LOG_PREFIX = "[Claude Export Hub]";
+const LOG_PREFIX = "[ChatGPT + Claude Backup][claude]";
 const CHAT_UUID_PATTERN = /\/chat\/([0-9a-f-]{36})/i;
 const CHAT_PAGE_PATTERN = /^https:\/\/claude\.ai\/chat\/[^/]+/i;
 const PREFS_KEY = "exportPreferences";

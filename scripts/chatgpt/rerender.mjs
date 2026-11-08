@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Rebuilds a Full archive's transcripts from the saved conversation.json files, offline, with the
+// Rebuilds a ChatGPT backup's transcripts from the saved conversation.json files, offline, with the
 // extension's own renderer (src/chatgpt/core/transcript.js + src/chatgpt/archive/render.js). Use it after a
 // rendering fix instead of asking ChatGPT for every chat again.
 //
-//   node scripts/chatgpt/rerender.mjs "<ChatGPT Full Archive>"            report which chats would change
-//   node scripts/chatgpt/rerender.mjs "<ChatGPT Full Archive>" --write    rewrite only the files that change
+//   node scripts/chatgpt/rerender.mjs "<Downloads/ChatGPT Backup>"            report which chats would change
+//   node scripts/chatgpt/rerender.mjs "<Downloads/ChatGPT Backup>" --write    rewrite only the files that change
 //   … --ids=<id,id>                                                 limit to some chats
 //
 // Links to saved files come from each chat's manifest.json (file id → saved path), so files
@@ -20,7 +20,7 @@ const args = process.argv.slice(2);
 const root = args.find(a => !a.startsWith('--'));
 const write = args.includes('--write');
 const only = new Set((args.find(a => a.startsWith('--ids=')) || '').slice(6).split(',').filter(Boolean));
-if (!root) { console.error('usage: node scripts/chatgpt/rerender.mjs "<ChatGPT Full Archive>" [--write] [--ids=…]'); process.exit(2); }
+if (!root) { console.error('usage: node scripts/chatgpt/rerender.mjs "<Downloads/ChatGPT Backup>" [--write] [--ids=…]'); process.exit(2); }
 
 const read = rel => fs.readFileSync(path.join(here, '..', '..', 'src', 'chatgpt', rel), 'utf8');
 const { version } = JSON.parse(fs.readFileSync(path.join(here, '..', '..', 'package.json'), 'utf8'));

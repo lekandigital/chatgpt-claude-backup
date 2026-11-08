@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Fold Claude's official data export into a Full archive folder.
+"""Fold Claude's official data export into a Claude backup folder.
 
-Run after the Full archive (with archive-hints.json) has finished:
+Run after a Back up all chats run (with archive-hints.json) has finished:
 
-    python3 -I scripts/claude/merge-official-export.py "<Downloads/Claude Full Archive>" <extracted export dir>
+    python3 -I scripts/claude/merge-official-export.py "<Downloads/Claude Backup>" <extracted export dir>
 
 It adds:
   _official-export-only/   chats Claude no longer serves (purged incognito or

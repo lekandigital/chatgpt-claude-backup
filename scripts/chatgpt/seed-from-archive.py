@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Write chatgpt/archive-state.json from an existing Full archive folder.
+"""Write chatgpt/archive-state.json from an existing ChatGPT backup folder.
 
 Use it to continue a run on another computer: copy the archive folder there, run this
 against it, reload the extension, and start the archive with the same folder name.
 Chats whose manifest records a failure the current archiver can fix are left out, so
 they are archived again.
 
-    python3 -I scripts/chatgpt/seed-from-archive.py "<Downloads/ChatGPT Full Archive>" [--since 2026-11-05T15:36:00Z]
+    python3 -I scripts/chatgpt/seed-from-archive.py "<Downloads/ChatGPT Backup>" [--since 2026-11-05T15:36:00Z]
 
 --since keeps only chats archived at or after that time (when an older archiver
 revision wrote the earlier ones).

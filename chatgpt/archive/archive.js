@@ -602,7 +602,8 @@ const ArchiveRender = (() => {
 
 
 // Source: src/chatgpt/archive/archive.js
-// Full archive: every ChatGPT chat as its own folder under Downloads/<root>/.
+// ChatGPT backup page: each chat as its own folder, straight in Downloads for one chat, chosen
+// chats and projects, or under Downloads/<root>/ (default ChatGPT Backup) for "all chats".
 // Runs in its own extension tab, so a long export is not at the mercy of service-worker
 // suspension. All chatgpt.com requests run inside a background chatgpt.com tab through the
 // archive-page.js API (credentials never leave that page); this page only receives JSON and
